@@ -167,7 +167,7 @@ $("btnNl").addEventListener("click", async () => {
       for (const x of r.ejemplos) p.append(h("div", { class: "muted" }, "· " + x));
       if (r.claves.length) p.append(h("div", { style: "margin-top:6px" },
         h("button", { onclick: () => selectProposed(r.claves) }, `Seleccionar estos ${r.claves.length} en la tabla`),
-        h("span", { class: "muted" }, "  (no se lanza nada hasta que pulses «Confirmar movimientos y lanzar»)")));
+        h("span", { class: "muted" }, "  (no se ejecuta nada hasta que pulses «Simular lanzamiento»)")));
     }
     box.append(p);
   } catch (e) { note(box, e.message, true); }
@@ -480,7 +480,7 @@ async function chequear() {
     }
     card.append(h("div", { class: "scroll", style: "max-height:300px;margin-top:8px" }, tb));
     if (Object.keys(propuestas).length) card.append(h("div", { class: "row", style: "margin-top:8px" },
-      h("button", { onclick: () => { cantidadesOk = propuestas; note($("sitOut"), "Cantidades propuestas aceptadas: se usarán al lanzar."); } }, "Usar las cantidades propuestas"),
+      h("button", { onclick: () => { cantidadesOk = propuestas; note($("sitOut"), "Cantidades propuestas aceptadas: se usarán al simular el lanzamiento."); } }, "Usar las cantidades propuestas"),
       h("span", { class: "muted" }, "Si no las aceptas, se usa la cantidad por defecto.")));
     card.append(h("div", { style: "margin-top:8px" }, h("button", { class: "sec", onclick: () => clear($("chkOut")) }, "Cerrar informe")));
     box.append(card);
@@ -505,7 +505,7 @@ $("btnRunSit").addEventListener("click", async () => {
   const resumen = {};
   items.forEach((i) => { resumen[i.mov] = (resumen[i.mov] || 0) + 1; });
   const sinChk = items.filter((i) => !chk[i.e.clave]).length;
-  const txt = `Vas a lanzar ${items.length} escenario(s) en modo SIMULADO (no se conecta a SAP).\n\n` +
+  const txt = `Vas a SIMULAR el lanzamiento de ${items.length} escenario(s).\n\nNO se contabiliza nada en SAP: los stocks, lotes y documentos del resultado serán INVENTADOS.\n\n` +
     (modoSap ? "AVISO: el chequeo usa SAP real, pero el lanzamiento todavía es simulado: no contabiliza nada en SAP.\n\n" : "") +
     (sinChk ? `AVISO: ${sinChk} escenario(s) sin chequear (botón «Chequear datos»: comprueba datos, registro info y stock sin contabilizar).\n` : "") +
     (excl.length ? `${excl.length} se EXCLUYEN del lanzamiento porque el chequeo dio sin registro info, sin stock o error de SAP.
@@ -581,6 +581,9 @@ async function openRun(id) {
   curRun = r;
   $("secDetail").classList.remove("hide");
   $("detTitle").textContent = `Ejecución ${r.id} · ${r.fichero}${r.simulado ? " · SIMULADA" : ""}`;
+  clear($("detAviso"));
+  if (r.simulado) $("detAviso").append(h("div", { class: "simul" }, "SIMULACIÓN: no se ha contabilizado nada en SAP. El stock, los lotes, los documentos y los apuntes FI/CO/ML de esta ejecución son INVENTADOS "
+    + "(sirven para ver el formato). Para datos reales usa «Chequear datos» con SAP real; la contabilización real aún no está implementada."));
   const cards = clear($("detSum"));
   cards.append(h("div", { class: "kpi" }, "Estado", h("b", {}, r.estado.replace(/_/g, " "))));
   for (const k of ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "SIN_REGISTRO_INFO", "NO_SOPORTADO"])

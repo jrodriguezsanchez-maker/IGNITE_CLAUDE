@@ -54,6 +54,7 @@
   details.cols { position:relative; } details.cols summary { cursor:pointer; padding:7px 10px; border:1px solid var(--bd); border-radius:6px; background:#fff; list-style:none; }
   details.cols .pop { position:absolute; z-index:5; background:#fff; border:1px solid var(--bd); border-radius:6px; padding:8px 12px; max-height:300px; overflow:auto; min-width:240px; box-shadow:0 4px 14px #0002; }
   details.cols label { display:block; white-space:nowrap; }
+  .simul { background:#fde2e0; color:#b42318; border:2px solid #b42318; border-radius:8px; padding:10px 14px; margin-bottom:10px; font-weight:600; }
   .chipbtn { border:0; border-radius:10px; padding:2px 12px; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; }
   pre { margin:4px 0; white-space:pre-wrap; font:12px/1.4 Consolas,monospace; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -75,7 +76,7 @@
   </aside>
   <main>
     <div class="tabs">
-      <div class="tab on" id="tabPrep">1 · Preparar y lanzar</div>
+      <div class="tab on" id="tabPrep">1 · Preparar y simular</div>
       <div class="tab" id="tabRes">2 · Resultados <span id="resCount" class="muted"></span></div>
     </div>
 
@@ -128,7 +129,7 @@
           <span id="barInfo" class="grow"></span>
           <label class="muted">Cantidad por defecto <input type="text" id="qty" style="width:64px;text-align:right"></label>
           <button class="sec" id="btnChk" title="Solo lectura: no contabiliza nada">Chequear datos</button>
-          <button id="btnRunSit">Confirmar y lanzar</button>
+          <button id="btnRunSit" title="Todavía NO contabiliza en SAP: ejecuta una simulación con datos inventados">Simular lanzamiento (no contabiliza)</button>
         </div>
       </div>
 
@@ -142,6 +143,7 @@
         <div id="runs" class="muted" style="margin-top:8px">Sin ejecuciones todavía.</div>
       </div>
       <div class="card hide" id="secDetail">
+        <div id="detAviso"></div>
         <h2 id="detTitle"></h2>
         <div id="detSum" class="cards"></div>
         <div class="row" id="detTabs" style="margin-bottom:8px"></div>
