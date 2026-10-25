@@ -448,6 +448,16 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "No encontrado"})
 
 
+class Servidor(ThreadingHTTPServer):
+    allow_reuse_address = False   # en Windows, si no, un segundo servidor arranca "bien" en el mismo puerto sin recibir nada
+
+
 if __name__ == "__main__":
+    try:
+        srv = Servidor((HOST, PORT), Handler)
+    except OSError:
+        print(f"ERROR: ya hay otro servidor usando el puerto {PORT}. Ciérralo (ventana negra anterior) y vuelve a abrir este programa.")
+        print("Mientras siga abierto el antiguo, el navegador seguirá usando el código viejo.")
+        sys.exit(1)
     print(f"Front de automatizaciones en http://{HOST}:{PORT}  (Ctrl+C para parar)")
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    srv.serve_forever()
