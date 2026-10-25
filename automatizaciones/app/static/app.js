@@ -320,8 +320,9 @@ function planSap(e, r, mov) {
         ["Lote", "FEFO / FIFO: el primero con stock"], ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se traslada lo disponible (parcial)."),
       paso(3, "ME21N", `Crear el pedido de traslado ${mov}`, [["Org. compras / grupo / sociedad", val("org_compras") && val("grupo_compras") && val("sociedad") ? `${val("org_compras")} / ${val("grupo_compras")} / ${val("sociedad")}` : null],
         ["Centro suministrador", val("centro")], ["Centro / almacén receptor", par("centro_destino", "alm_destino")], ["Posiciones", val("material") ? `${val("material")} · cantidad ${val("cantidad") || "—"} · lote del paso 2` : null]]),
-      paso(4, "VL01N", "Crear la entrega de salida por referencia al STO", [["Punto de expedición", "lo determina SAP"], ["Posiciones", "las del STO, con su lote"]],
-        "La fase 1 termina aquí: no se hace picking (VL02N) ni salida de mercancía. Los pasos siguientes del Excel se entregan para validar."));
+      paso(4, "VL10B", "Crear la entrega de salida desde los pedidos pendientes de entrega", [["Selección", `el STO creado en el paso 3 · centro suministrador ${val("centro") || "—"}`],
+        ["Punto de expedición", val("punto_expedicion") || "sin indicar: lo toma SAP del centro suministrador"], ["Posiciones", "las del STO, con su lote"]],
+        "Se marca el STO y se crea la entrega. La fase 1 termina aquí: no se hace picking (VL02N) ni salida de mercancía. Los pasos siguientes del Excel se entregan para validar."));
   } else {
     const extra = r.req.requiere.filter((f) => !["centro", "alm_origen", "material", "cantidad", "centro_destino", "alm_destino"].includes(f)).map((f) => [lab(f), val(f)]);
     box.append(
@@ -352,6 +353,13 @@ function detailRow(e, span) {
     inputs[f] = inp;
     inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));   // se guarda al salir del campo o con Intro
     grid.append(h("span", {}, lab(f)), inp, v ? h("span", { class: "muted" }, r.src[f]) : chip("ERROR", "falta"));
+  }
+  for (const f of r.req.opcionales || []) {
+    const inp = h("input", { type: "text", style: "width:100%", placeholder: "opcional" });
+    inp.value = Array.isArray(r.vals[f]) ? r.vals[f].join(", ") : (r.vals[f] || "");
+    inputs[f] = inp;
+    inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));
+    grid.append(h("span", { class: "muted" }, lab(f) + " (opcional)"), inp, h("span", { class: "muted" }, r.vals[f] ? r.src[f] : ""));
   }
   form.append(grid, h("div", { class: "muted", style: "margin-top:6px" }, "Los cambios se guardan al salir del campo o al pulsar Intro."), h("div", { class: "row", style: "margin-top:8px" },
     h("button", { onclick: () => guardar(e, inputs, false) }, "Guardar en este escenario"),

@@ -82,7 +82,7 @@ class MockSap(SapBackend):
     def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino, extra=None):
         return "SIM-%010d" % (self._h(tipo_mov, material, lote, cantidad) % 10**10)
 
-    # --- Pedido de traslado (STO) y entrega de salida (en SAP real: ME13, MB52/LS24, ME21N, VL01N) ---
+    # --- Pedido de traslado (STO) y entrega de salida (en SAP real: ME13, MB52/LS24, ME21N, VL10B) ---
     def registro_info(self, material, centro_suministrador, org_compras):
         return self._h(material, centro_suministrador, org_compras, "info") % 6 != 0
 

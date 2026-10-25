@@ -4,7 +4,7 @@ Orden por escenario:
   1. Resolver datos (Excel + aportados + valores por centro) y comprobar los obligatorios del tipo ZTRA/ZINT/ZWIA.
   2. Validar registro info de cada material con el centro suministrador. Si falta alguno, se para el escenario y se avisa.
   3. Buscar stock en centro/almacén suministrador (MB52, o cuantos WM si el almacén es WM) y elegir lote FEFO/FIFO.
-  4. Crear el STO (ME21N) y la entrega de salida (VL01N). No se hace picking ni salida de mercancía todavía.
+  4. Crear el STO (ME21N) y la entrega de salida (VL10B, pedidos pendientes de entrega). No se hace picking ni salida de mercancía todavía.
 En modo simulado nada de esto toca SAP.
 """
 import engine

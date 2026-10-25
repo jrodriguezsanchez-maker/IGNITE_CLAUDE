@@ -20,7 +20,8 @@ No hay derivación de centro destino = origen (en un STO son distintos). Lo que 
 1. Resolver datos y comprobar obligatorios (si faltan: FALTAN_DATOS).
 2. Registro info por material con el centro suministrador (ME13, EINA/EINE). Si falta alguno se **para el escenario** y se avisa (SIN_REGISTRO_INFO).
 3. Stock en centro/almacén suministrador: MB52, o cuantos WM (LS24/LX02) si el almacén es WM. Lote FEFO/FIFO. Stock insuficiente = parcial.
-4. Crear STO (ME21N) y entrega de salida (VL01N por referencia al STO).
+4. Crear STO (ME21N) y entrega de salida con **VL10B** (pedidos pendientes de entrega): se localiza el STO creado, se marca y se crea la entrega.
+   El punto de expedición es opcional: si no se indica, lo toma SAP del centro suministrador (se puede fijar por centro).
 
 ## Pendiente de validar con consultor MM/SD
 - Requisitos reales por tipo (campos obligatorios, partida aduanera/Intrastat en ZWIA, cliente del centro receptor en ZINT).

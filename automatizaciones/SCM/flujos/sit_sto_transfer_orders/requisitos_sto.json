@@ -1,7 +1,9 @@
 {
   "_nota": "Datos que exige el pedido de traslado (STO, ME21N) según tipo de documento. Genérico (sin datos de cliente). Validar con consultor MM/SD: la configuración real puede variar.",
   "derivar_centro_destino": false,
-  "valores_por_defecto": {"grupo_compras": "950"},
+  "valores_por_defecto": {
+    "grupo_compras": "950"
+  },
   "campos": {
     "centro": "Centro suministrador",
     "alm_origen": "Almacén suministrador",
@@ -14,17 +16,85 @@
     "sociedad": "Sociedad",
     "wm": "¿Almacén suministrador WM? (S/N)",
     "vendor": "Vendor (del centro suministrador)",
-    "org_ventas": "Org. ventas"
+    "org_ventas": "Org. ventas",
+    "punto_expedicion": "Punto de expedición (VL10B)"
   },
-  "generico": {"nombre": "Tipo de documento sin definir", "desconocido": true,
-               "requiere": ["centro", "alm_origen", "centro_destino", "alm_destino", "material", "cantidad", "org_compras", "grupo_compras", "sociedad", "wm"],
-               "nota": "Tipo no definido: valídalo con un consultor MM/SD."},
+  "generico": {
+    "nombre": "Tipo de documento sin definir",
+    "desconocido": true,
+    "requiere": [
+      "centro",
+      "alm_origen",
+      "centro_destino",
+      "alm_destino",
+      "material",
+      "cantidad",
+      "org_compras",
+      "grupo_compras",
+      "sociedad",
+      "wm"
+    ],
+    "nota": "Tipo no definido: valídalo con un consultor MM/SD."
+  },
   "movimientos": {
-    "ZTRA": {"nombre": "Traslado intracompany", "requiere": ["centro", "alm_origen", "centro_destino", "alm_destino", "material", "cantidad", "org_compras", "grupo_compras", "sociedad", "wm"],
-             "nota": "Misma sociedad: sin facturación intercompany."},
-    "ZINT": {"nombre": "Traslado intercompany", "requiere": ["centro", "alm_origen", "centro_destino", "alm_destino", "material", "cantidad", "org_compras", "grupo_compras", "sociedad", "wm"],
-             "opcionales": ["org_ventas"], "nota": "Entre sociedades: el centro receptor debe existir como cliente del suministrador; precio por registro info."},
-    "ZWIA": {"nombre": "Traslado plant abroad", "requiere": ["centro", "alm_origen", "centro_destino", "alm_destino", "material", "cantidad", "org_compras", "grupo_compras", "sociedad", "wm"],
-             "opcionales": ["org_ventas"], "nota": "Centro en otro país: pueden hacer falta datos de comercio exterior (partida aduanera, Intrastat)."}
+    "ZTRA": {
+      "nombre": "Traslado intracompany",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "centro_destino",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "org_compras",
+        "grupo_compras",
+        "sociedad",
+        "wm"
+      ],
+      "nota": "Misma sociedad: sin facturación intercompany.",
+      "opcionales": [
+        "punto_expedicion"
+      ]
+    },
+    "ZINT": {
+      "nombre": "Traslado intercompany",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "centro_destino",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "org_compras",
+        "grupo_compras",
+        "sociedad",
+        "wm"
+      ],
+      "opcionales": [
+        "punto_expedicion",
+        "org_ventas"
+      ],
+      "nota": "Entre sociedades: el centro receptor debe existir como cliente del suministrador; precio por registro info."
+    },
+    "ZWIA": {
+      "nombre": "Traslado plant abroad",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "centro_destino",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "org_compras",
+        "grupo_compras",
+        "sociedad",
+        "wm"
+      ],
+      "opcionales": [
+        "punto_expedicion",
+        "org_ventas"
+      ],
+      "nota": "Centro en otro país: pueden hacer falta datos de comercio exterior (partida aduanera, Intrastat)."
+    }
   }
 }
