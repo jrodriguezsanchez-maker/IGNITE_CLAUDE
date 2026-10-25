@@ -1,7 +1,7 @@
 """Prueba controlada de la MIGO real (un solo documento, con datos confirmados por el usuario).
 
-Uso:  python sap_migo_prueba.py comprobar
-      python sap_migo_prueba.py contabilizar <huella>
+Uso:  python sap_migo_prueba.py comprobar - 344|311
+      python sap_migo_prueba.py contabilizar <huella> 344
 Datos fijos de esta prueba (confirmados por el usuario): 344 · material 108210 · centro L056 · almacén 1000 · lote 73994721 · 1 KG.
 Muestra el stock del lote (MB52) antes y, al contabilizar, también después. Salvar la salida a un fichero; no cortarla con tuberías.
 """
@@ -14,7 +14,13 @@ import sap_mb52
 
 faulthandler.dump_traceback_later(240, exit=True)
 
-DATOS = dict(mov="344", material="108210", centro="L056", almacen="1000", lote="73994721", cantidad="1", um="KG", motivo="0046")   # 0046 = Blocked Temporarily
+DATASETS = {
+    # 344: confirmado por el usuario (0046 = Blocked Temporarily)
+    "344": dict(mov="344", material="108210", centro="L056", almacen="1000", lote="73994721", cantidad="1", um="KG", motivo="0046"),
+    # 311: traslado entre almacenes (solo para validar con el Check; aún no se contabiliza)
+    "311": dict(mov="311", material="531634", centro="L056", almacen="1600", lote="9999", cantidad="1", um="", motivo="", almacen_destino="1000"),
+}
+DATOS = DATASETS[sys.argv[3] if len(sys.argv) > 3 else "344"]
 
 
 def stock_lote(ses):
@@ -38,7 +44,7 @@ def main():
             print("ABORTADO: la sesión no es del sistema/mandante permitidos.")
             return 1
         print("Sesión %s/%s · sesión nueva creada por el programa: %s" % (p["sid"], p["mandante"], creada), flush=True)
-        print("huella calculada:", sap_migo.huella(DATOS["mov"], DATOS["material"], DATOS["centro"], DATOS["almacen"], DATOS["lote"], DATOS["cantidad"], DATOS["motivo"]), flush=True)
+        print("huella calculada:", sap_migo.huella(DATOS["mov"], DATOS["material"], DATOS["centro"], DATOS["almacen"], DATOS["lote"], DATOS["cantidad"], DATOS["motivo"], DATOS.get("almacen_destino", "")), flush=True)
         print("STOCK ANTES  (MB52, lote %s):" % DATOS["lote"], stock_lote(ses), flush=True)
         try:
             res = sap_migo.traspaso(ses, modo=modo, clave=clave, **DATOS)

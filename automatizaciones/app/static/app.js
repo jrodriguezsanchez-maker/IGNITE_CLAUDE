@@ -7,7 +7,7 @@ let sel = null;               // {stream, flow, meta}
 let files = [];
 let catalog = [], cmeta = {}; // escenarios SIT y datos de la importación
 let reqCfg = null, defaults = {}, qty0 = 1, motivos = {};
-let modoSap = false;
+let modoSap = false, sistemasModo = "";
 const chk = {};
 const chkDet = {};        // clave -> detalle del último chequeo (lotes, stock…)           // clave -> estado del último chequeo
 let cantidadesOk = {};    // clave -> {material: cantidad} propuestas aceptadas
@@ -30,7 +30,13 @@ function h(tag, attrs, ...kids) {
 }
 const chip = (t, label) => h("span", { class: "chip " + t }, label ?? String(t).replace(/_/g, " "));
 const clear = (e) => { while (e.firstChild) e.removeChild(e.firstChild); return e; };
-const note = (box, text, err) => clear(box).append(h("div", { class: "msg" + (err ? " err" : "") }, text));
+const note = (box, text, err) => {
+  clear(box).append(h("div", { class: "msg" + (err ? " err" : "") }, text));
+  if (box.id === "sitOut" || box.id === "upOut") {            // son mensajes flotantes: se quitan solos
+    clearTimeout(box._t);
+    box._t = setTimeout(() => clear(box), err ? 20000 : 7000);
+  }
+};
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -72,10 +78,12 @@ async function selectFlow(stream, f) {
   sel = { stream, flow: f.id, meta: f };
   $("flowTitle").textContent = `${stream} › ${f.nombre}`;
   $("flowDesc").textContent = f.descripcion;
+  $("flowTitle").title = f.descripcion;
   $("btnImport").classList.toggle("hide", !isSit());
   $("btnPreview").classList.toggle("hide", isSit());
   $("btnRunFile").classList.toggle("hide", isSit());
   $("secSit").classList.toggle("hide", !isSit());
+  actualizarBotones();
   for (const id of ["upOut", "nlOut", "sitOut", "preview"]) clear($(id));
   picked.clear(); open.clear(); catalog = []; cmeta = {};
   visCols = (f.config || {}).columnas_por_defecto || [];
@@ -415,7 +423,22 @@ function detailRow(e, span) {
   return h("tr", { class: "det" }, h("td", { colspan: String(span) }, h("div", { class: "grid2" }, form, right)));
 }
 
-function renderSit() {
+// Reconstruir la tabla no debe mover lo que el usuario está viendo: se conserva el scroll de la página y el de la propia tabla.
+function conservarVista(fn) {
+  const caja = document.querySelector("#secSit .scroll");
+  const y = window.scrollY, x = window.scrollX, top = caja ? caja.scrollTop : 0, left = caja ? caja.scrollLeft : 0;
+  const prev = document.body.style.minHeight;
+  document.body.style.minHeight = document.documentElement.scrollHeight + "px";   // evita que el navegador recorte el scroll mientras la tabla está vacía
+  try { fn(); } finally {
+    if (caja) { caja.scrollTop = top; caja.scrollLeft = left; }
+    window.scrollTo(x, y);
+    document.body.style.minHeight = prev;
+  }
+}
+
+function renderSit() { conservarVista(renderSitInterno); }
+
+function renderSitInterno() {
   const vis = visible();
   const tb = clear($("sitTable"));
   const span = visCols.length + 5;
@@ -507,6 +530,34 @@ async function chequear() {
 }
 $("btnChk").addEventListener("click", chequear);
 
+$("btnPost").addEventListener("click", async () => {
+  const todos = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
+  if (!todos.length) return;
+  const malos = todos.filter((i) => !movOk(i.mov));
+  if (malos.length) return note($("sitOut"), `Falta indicar ${etq().clase.toLowerCase()} en ${malos.length} escenario(s): ` + malos.slice(0, 8).map((i) => i.e.fila1["JIRA ID"]).join(", "), true);
+  try {
+    await post("/api/sit/confirm", { stream: sel.stream, flow: sel.flow, items: todos.map((i) => ({ clave: i.e.clave, mov: i.mov })) });
+    todos.forEach((i) => { i.e.confirmado = true; i.e.mov = i.mov; });
+    note($("sitOut"), "Preparando los datos exactos (lee el stock en SAP)…");
+    const r = await post("/api/sit/preparar", { stream: sel.stream, flow: sel.flow, claves: todos.map((i) => i.e.clave), cantidad: qtyGlobal() });
+    const ok = r.documentos.filter((d) => d.ok), no = r.documentos.filter((d) => !d.ok);
+    if (!ok.length) return note($("sitOut"), "Ninguno se puede contabilizar: " + no.slice(0, 4).map((d) => `${d.jira_id}: ${d.problema}`).join(" | "), true);
+    if (ok.length > r.maximo) return note($("sitOut"), `Máximo ${r.maximo} documentos por ejecución: has seleccionado ${ok.length}.`, true);
+    const lineas = ok.map((d) => `• ${d.jira_id} · mov ${d.mov} · material ${d.material} · centro ${d.centro} · almacén ${d.almacen}${d.almacen_destino ? " → " + d.almacen_destino : ""} · lote ${d.lote || "sin lote"} · cantidad ${d.cantidad} · motivo ${d.motivo ? d.motivo + " (" + (((motivos[d.mov] || []).find((m) => m.codigo === d.motivo) || {}).texto || "?") + ")" : "—"}   [huella ${d.huella}]`);
+    const txt = `CONTABILIZAR DE VERDAD en SAP (${sistemasModo})\n\nSe crearán ${ok.length} documento(s) de material:\n${lineas.join("\n")}\n` +
+      (no.length ? `\nNO se contabilizan ${no.length}:\n${no.slice(0, 5).map((d) => `• ${d.jira_id}: ${d.problema}`).join("\n")}\n` : "") +
+      `\nEsto MODIFICA datos en el sistema (stock y documentos). Escribe CONTABILIZAR para confirmar:`;
+    const t = window.prompt(txt);
+    if (t === null) return note($("sitOut"), "Cancelado: no se ha contabilizado nada.");
+    if (t.trim() !== "CONTABILIZAR") return note($("sitOut"), "No has escrito CONTABILIZAR: no se ha contabilizado nada.", true);
+    const huellas = Object.fromEntries(ok.map((d) => [d.clave, d.huella]));
+    const res = await post("/api/sit/contabilizar", { stream: sel.stream, flow: sel.flow, claves: ok.map((d) => d.clave), huellas, cantidad: qtyGlobal(), confirmacion: t.trim() });
+    for (const k of Object.keys(chk)) { delete chk[k]; delete chkDet[k]; }
+    renderSit();
+    setTab("res"); openRun(res.id);
+  } catch (e) { note($("sitOut"), e.message, true); }
+});
+
 $("qty").addEventListener("change", () => { for (const k of Object.keys(chk)) { delete chk[k]; delete chkDet[k]; } cantidadesOk = {}; renderSit(); });
 $("btnRunSit").addEventListener("click", async () => {
   const todos = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
@@ -554,7 +605,7 @@ async function loadRuns() {
   for (const r of runs) {
     const s = r.resumen || {};
     tb.append(h("tr", { style: "cursor:pointer", onclick: () => openRun(r.id) }, h("td", {}, r.inicio), h("td", {}, r.flujo), h("td", {}, r.fichero),
-      h("td", {}, chip(r.estado), r.simulado ? " simulado" : ""), h("td", {}, s.OK ?? ""), h("td", {}, s.PARCIAL ?? ""),
+      h("td", {}, chip(r.estado), r.simulado ? " simulado" : ""), h("td", {}, s.OK ?? s.CONTABILIZADO ?? ""), h("td", {}, s.PARCIAL ?? ""),
       h("td", {}, s.SIN_STOCK ?? ""), h("td", {}, s.ERROR ?? ""), h("td", {}, s.FALTAN_DATOS ?? ""), h("td", {}, s.SIN_REGISTRO_INFO ?? ""), h("td", {}, s.NO_SOPORTADO ?? "")));
   }
   box.append(tb);
@@ -575,7 +626,11 @@ const TABS_STO = {
   entregas: ["Entregas de salida", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["entrega", "Entrega"], ["sto", "STO"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["wm", "WM"]]],
   pasos: ["Pasos del escenario", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["paso", "Paso"], ["fase", "Fase"], ["equipo", "Equipo"], ["transacciones", "Transacciones"], ["descripcion", "Descripción"], ["esperado", "Resultado esperado"]]],
 };
-const tabsDe = (r) => (r.tipo === "sit" ? (r.modo === "sto" ? TABS_STO : TABS_SIT) : TABS_ROWS);
+const TABS_REAL = {
+  escenarios: ["Documentos", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["escenario", "Test Scenario"], ["mov", "Mov."], ["estado", "Estado"], ["detalle", "Detalle"]]],
+  mm: ["MM · Movimientos", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["mov", "Mov."], ["material", "Material"], ["centro", "Centro"], ["almacen", "Almacén"], ["almacen_destino", "Alm. destino"], ["lote", "Lote"], ["motivo", "Motivo"], ["pedida", "Cantidad"], ["estado", "Estado"], ["documentos", "Doc. material"], ["stock_antes", "Stock antes (MB52)"], ["stock_despues", "Stock después (MB52)"], ["detalle", "Mensaje de SAP"]]],
+};
+const tabsDe = (r) => (r.real ? TABS_REAL : r.tipo === "sit" ? (r.modo === "sto" ? TABS_STO : TABS_SIT) : TABS_ROWS);
 const TABS_ROWS = { filas: ["Filas", [["fila", "Fila"], ["tipo_mov", "Mov."], ["material", "Material"], ["centro", "Centro"], ["almacen", "Almacén"], ["pedida", "Pedida"], ["movida", "Movida"], ["estado", "Estado"], ["detalle", "Detalle"], ["docs", "Documentos"]]] };
 
 function showTab(key) {
@@ -602,10 +657,11 @@ async function openRun(id) {
   clear($("detAviso"));
   if (r.simulado) $("detAviso").append(h("div", { class: "simul" }, "SIMULACIÓN: no se ha contabilizado nada en SAP. El stock, los lotes, los documentos y los apuntes FI/CO/ML de esta ejecución son INVENTADOS "
     + "(sirven para ver el formato). Para datos reales usa «Chequear datos» con SAP real; la contabilización real aún no está implementada."));
+  if (r.real) $("detAviso").append(h("div", { class: "real" }, "CONTABILIZACIÓN REAL en SAP: estos documentos SÍ se han creado. Número de documento y stock antes/después en la pestaña «MM · Movimientos»."));
   const cards = clear($("detSum"));
   cards.append(h("div", { class: "kpi" }, "Estado", h("b", {}, r.estado.replace(/_/g, " "))));
-  for (const k of ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "SIN_REGISTRO_INFO", "NO_SOPORTADO"])
-    if (k in (r.resumen || {}) || ["OK", "PARCIAL", "SIN_STOCK", "ERROR"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace(/_/g, " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
+  for (const k of (r.real ? ["CONTABILIZADO", "ERROR"] : ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "SIN_REGISTRO_INFO", "NO_SOPORTADO"]))
+    if (r.real || k in (r.resumen || {}) || ["OK", "PARCIAL", "SIN_STOCK", "ERROR"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace(/_/g, " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
   showTab(r.tipo === "sit" ? (curTab in tabsDe(r) ? curTab : "escenarios") : "filas");
   $("detLog").textContent = r.log.map((l) => `${l.t} [${l.nivel}] ${l.msg}`).join("\n");
   if (r.estado === "EN_CURSO") poll = setTimeout(() => openRun(id), 800);
@@ -625,10 +681,17 @@ $("btnCsv").addEventListener("click", () => {
 });
 
 // ---------- arranque: abre el primer flujo SIT (o el primero) ----------
+function actualizarBotones() {
+  // «Contabilizar en SAP…» solo con el chequeo en modo SAP real y en flujos de MIGO (los STO aún no se contabilizan de verdad)
+  $("btnPost").classList.toggle("hide", !(modoSap && sel && isSit() && !esSto()));
+}
+
 async function loadModo() {
   try {
     const m = await api("/api/modo");
     modoSap = m.modo === "sap";
+    sistemasModo = (m.sistemas || []).join(", ");
+    actualizarBotones();
     $("modoSel").value = m.modo;
     const b = $("badge");
     b.classList.toggle("sap", modoSap);

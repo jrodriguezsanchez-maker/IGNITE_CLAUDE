@@ -55,7 +55,17 @@
   details.cols .pop { position:absolute; z-index:5; background:#fff; border:1px solid var(--bd); border-radius:6px; padding:8px 12px; max-height:300px; overflow:auto; min-width:240px; box-shadow:0 4px 14px #0002; }
   details.cols label { display:block; white-space:nowrap; }
   .simul { background:#fde2e0; color:#b42318; border:2px solid #b42318; border-radius:8px; padding:10px 14px; margin-bottom:10px; font-weight:600; }
+  .real { background:#dcf5e7; color:#1a7f4b; border:2px solid #1a7f4b; border-radius:8px; padding:10px 14px; margin-bottom:10px; font-weight:600; }
+  #btnPost { background:#1a7f4b; }
   .chipbtn { border:0; border-radius:10px; padding:2px 12px; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .compacta { padding:8px 12px; margin-bottom:8px; }
+  #secSit { padding:8px 12px; margin-bottom:0; }
+  #secSit .scroll { height:calc(100vh - 300px); min-height:300px; max-height:none; }
+  #sitOut .msg, #upOut .msg { position:fixed; right:18px; bottom:84px; z-index:30; max-width:520px; box-shadow:0 4px 16px #0003; margin:0; }
+  #chkOut { position:fixed; right:16px; bottom:84px; z-index:25; width:min(980px,94vw); max-height:52vh; overflow:auto; }
+  #chkOut .prop { margin-top:0; box-shadow:0 6px 24px #0004; }
+  .tabs { margin-bottom:8px; }
+  .layout { padding-top:8px; }
   pre { margin:4px 0; white-space:pre-wrap; font:12px/1.4 Consolas,monospace; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 </style>
@@ -81,44 +91,32 @@
     </div>
 
     <div id="vPrep">
-      <div class="card" id="cardFile" title="Puedes arrastrar aquí un Excel">
+      <div class="card compacta" id="cardFile" title="Puedes arrastrar aquí un Excel">
         <div class="row">
-          <h2 style="margin:0" id="flowTitle"></h2>
-          <span class="muted grow" id="flowDesc"></span>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <b>Fichero</b>
-          <select id="fileSel" class="grow"></select>
+          <b id="flowTitle" style="white-space:nowrap"></b>
+          <span id="flowDesc" class="hide"></span>
+          <select id="fileSel" class="grow" style="min-width:220px" title="Fichero"></select>
           <button class="sec" id="btnUpload">Subir otro Excel…</button>
           <input type="file" id="file" accept=".xlsx" class="hide">
           <button id="btnImport" class="hide">Importar escenarios</button>
           <button class="sec hide" id="btnPreview">Ver contenido</button>
           <button class="hide" id="btnRunFile">Lanzar simulación</button>
-        </div>
-        <div id="fileInfo" class="muted" style="margin-top:6px"></div>
-        <div id="upOut"></div>
-      </div>
-
-      <div class="card" id="cardNl">
-        <h2>Pídelo con tus palabras</h2>
-        <div class="row">
-          <input type="text" id="nl" class="grow" placeholder="Ej.: traslados en Belgium · bloqueo de stock · IG-5919 · último fichero">
+          <input type="text" id="nl" class="grow" style="min-width:240px" placeholder="Pídelo con tus palabras: traslados en Belgium · bloqueo de stock · IG-5919">
           <button id="btnNl">Proponer</button>
         </div>
+        <div id="fileInfo" class="hide"></div>
+        <div id="upOut"></div>
         <div id="nlOut"></div>
       </div>
 
       <div id="secSit" class="card hide">
-        <h2>Escenarios</h2>
-        <div id="scope" class="muted" style="margin-bottom:8px"></div>
-        <div class="row" style="margin-bottom:8px">
+        <div id="scope" class="muted" style="font-size:12px;margin-bottom:6px"></div>
+        <div class="row" style="margin-bottom:6px">
           <input type="text" id="sitQ" class="grow" placeholder="Buscar en cualquier columna: JIRA ID, escenario, unidad, material…">
           <span id="filtros" class="row"></span>
           <select id="sitEst"><option value="">Estado: todos</option><option value="pend">Por confirmar</option><option value="ok">Confirmados</option><option value="falta">Con datos pendientes</option><option value="aviso">Con avisos</option></select>
           <details class="cols"><summary>Columnas ▾</summary><div class="pop" id="colPick"></div></details>
-        </div>
-        <div class="row" style="margin-bottom:6px">
-          <button class="sec" id="btnSelVis">Seleccionar los visibles</button>
+          <button class="sec" id="btnSelVis">Seleccionar visibles</button>
           <button class="sec" id="btnSelNone">Quitar selección</button>
           <span id="sitCount" class="muted"></span>
         </div>
@@ -129,7 +127,8 @@
           <span id="barInfo" class="grow"></span>
           <label class="muted">Cantidad por defecto <input type="text" id="qty" style="width:64px;text-align:right"></label>
           <button class="sec" id="btnChk" title="Solo lectura: no contabiliza nada">Chequear datos</button>
-          <button id="btnRunSit" title="Todavía NO contabiliza en SAP: ejecuta una simulación con datos inventados">Simular lanzamiento (no contabiliza)</button>
+          <button class="sec" id="btnRunSit" title="No toca SAP: ejecuta una simulación con datos inventados (solo para ver el formato)">Simular (datos inventados)</button>
+          <button id="btnPost" class="hide" title="Crea de verdad los documentos de material en SAP (MIGO). Pide confirmación escrita.">Contabilizar en SAP…</button>
         </div>
       </div>
 

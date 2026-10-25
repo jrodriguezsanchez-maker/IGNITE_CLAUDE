@@ -18,7 +18,9 @@ import time
 
 import sap_mb52
 
-MOVIMIENTOS_PERMITIDOS = {"344", "343"}      # se amplía de uno en uno, tras probar cada uno
+MOVIMIENTOS_PERMITIDOS = {"311", "343", "344"}   # contabilización real: se amplía tras validar cada tipo con el Check (311 validado: 0 errores)
+MOVIMIENTOS_COMPROBAR = {"311", "321", "322", "343", "344"}   # el Check (sin contabilizar) sí puede probarlos para validar la pantalla
+CON_DESTINO = {"311"}                         # movimientos que necesitan almacén de destino
 MAX_CANTIDAD = 100000
 CONTENEDORES = ("GuiUserArea", "GuiSimpleContainer", "GuiContainerShell", "GuiTab", "GuiTabStrip", "GuiScrollContainer", "GuiCustomControl",
                 "GuiSplitterContainer", "GuiMainWindow", "GuiGOS", "GuiTableControl")
@@ -28,9 +30,11 @@ class MigoError(sap_mb52.SapError):
     pass
 
 
-def huella(mov, material, centro, almacen, lote, cantidad, motivo=""):
+def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino=""):
     """Código que identifica los datos exactos. Cambia si cambia cualquiera de ellos."""
     txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, cantidad, motivo))
+    if almacen_destino:
+        txt += "|" + str(almacen_destino).strip().upper()
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()[:8].upper()
 
 
@@ -135,11 +139,14 @@ def _mensaje(ses):
     return str(sb.Text).strip(), str(sb.MessageType)
 
 
-def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo=""):
+def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo="", almacen_destino=""):
     """Prepara (y opcionalmente contabiliza) un traspaso en MIGO. Devuelve un dict con el resultado."""
     mov, cantidad = str(mov).strip().upper(), cantidad
-    if mov not in MOVIMIENTOS_PERMITIDOS:
-        raise MigoError("Movimiento %s no permitido para la contabilización real (permitidos: %s)." % (mov, ", ".join(sorted(MOVIMIENTOS_PERMITIDOS))))
+    permitidos = MOVIMIENTOS_PERMITIDOS if modo == "contabilizar" else MOVIMIENTOS_COMPROBAR
+    if mov not in permitidos:
+        raise MigoError("Movimiento %s no permitido para %s (permitidos: %s)." % (mov, "contabilizar de verdad" if modo == "contabilizar" else "comprobar", ", ".join(sorted(permitidos))))
+    if mov in CON_DESTINO and not str(almacen_destino).strip():
+        raise MigoError("El movimiento %s necesita almacén de destino." % mov)
     try:
         cant = float(str(cantidad).replace(",", "."))
     except ValueError:
@@ -148,7 +155,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         raise MigoError("Cantidad fuera de rango (máximo %s)." % MAX_CANTIDAD)
     if modo not in ("comprobar", "contabilizar"):
         raise MigoError("Modo no válido.")
-    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo)
+    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo, almacen_destino)
     if modo == "contabilizar" and (clave or "").upper() != esperada:
         raise MigoError("La huella no coincide con los datos: el usuario no ha confirmado estos datos exactos. No se contabiliza.")
     if str(ses.Info.Transaction) != "SESSION_MANAGER" or ses.Children.Count > 1:
@@ -199,7 +206,9 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         campo("GODYNPRO-MAKTX").text = str(material)                                        # material
         intro("al introducir el material")
         campo("GODYNPRO-NAME1").text = str(centro)                                          # centro
-        campo("GODYNPRO-LGOBE").text = str(almacen)                                         # almacén
+        campo("GODYNPRO-LGOBE").text = str(almacen)                                         # almacén (origen)
+        if mov in CON_DESTINO:
+            campo("GOITEM-UMLGOBE").text = str(almacen_destino)                             # almacén de destino
         intro("al introducir centro y almacén")
         if lote:
             c = None
@@ -219,6 +228,10 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
             if c is None:
                 raise MigoError("No encuentro el campo de lote (¿el material no gestiona lotes?). Campos editables visibles: %s" % _editables(usr()))
             c.text = str(lote)
+            if mov in CON_DESTINO:                            # traslado entre almacenes: MIGO exige también el lote de recepción (el mismo)
+                u = _buscar(usr(), "GuiCTextField", "GODYNPRO-UMCHA") or _buscar(usr(), "GuiTextField", "GODYNPRO-UMCHA")
+                if u is not None:
+                    u.text = str(lote)
         campo("GODYNPRO-ERFMG").text = str(cantidad)                                        # cantidad
         intro("al introducir cantidad y lote")
         if motivo:                                                                          # motivo del movimiento: pestaña «Where»
@@ -253,6 +266,11 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
             _esperar(ses)
         sin_popup("tras el Check")
         res["check"], res["tipo_mensaje"] = _mensaje(ses)
+        if not res["check"] and res["registro"]:
+            avisos = [x.replace("texto: ", "") for x in res["registro"].split(" · ") if x.startswith("texto: ") and not x.replace("texto: ", "").strip().isdigit()
+                      and x.replace("texto: ", "") not in ("Type", "Item", "Message text", "Long")]
+            res["check"] = "Check sin errores" + (" · aviso: " + "; ".join(avisos) if avisos else "")
+            res["tipo_mensaje"] = "W"
         res["mensaje"] = res["check"]
         if res["tipo_mensaje"] in ("E", "A"):
             raise MigoError("MIGO rechaza los datos en el Check: " + res["check"])
@@ -281,3 +299,25 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         except Exception:
             pass
     return res
+
+
+def stock_lote(ses, material, centro, almacen, lote):
+    """Stock del lote según MB52 (solo lectura): libre, bloqueado, calidad. Si no hay lotes, la suma del material."""
+    r = sap_mb52.consultar(ses, material, centro, almacen, lotes=True, especiales=False)
+
+    def num(v):
+        t = str(v).strip().replace(".", "").replace(",", ".")
+        try:
+            return float(t) if t else 0.0
+        except ValueError:
+            return 0.0
+    tot = {"libre": 0.0, "bloqueado": 0.0, "calidad": 0.0}
+    for f in r["filas"]:
+        if not str(f.get("MATNR", "")).strip():
+            continue                                        # fila de totales
+        if lote and str(f.get("CHARG", "")).strip() != str(lote):
+            continue
+        tot["libre"] += num(f.get("LABST"))
+        tot["bloqueado"] += num(f.get("SPEME"))
+        tot["calidad"] += num(f.get("INSME"))
+    return tot

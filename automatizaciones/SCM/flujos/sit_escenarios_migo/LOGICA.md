@@ -75,3 +75,11 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
 - Lote: campo `GODYNPRO-CHARG` de la pestaña «Transfer Posting». El registro de mensajes del Check («Display logs») se lee: si tiene errores se aborta; si no, se cierra con Continue.
 - Probado (Check, sin contabilizar): 344 · 108210 · L056/1000 · lote 73994721 · 1 KG · motivo 0046 → «Document is O.K.».
 - Verificación posterior prevista: anotar el nº de documento de material, leerlo (MB51/MB03), comprobar movimiento, cantidad, lote y stock con MB52, y de ahí obtener los apuntes FI, CO y ML.
+
+## Contabilización real desde el HTML (botón «Contabilizar en SAP…»)
+- Solo con el chequeo en modo «SAP real» y en flujos de MIGO. Movimientos habilitados: **311, 343, 344** (cada tipo se habilita tras validarlo con el Check de MIGO; el 311 dio 0 errores y exige además el lote de recepción `UMCHA`, el mismo lote).
+- Flujo: confirmar tipos → el servidor prepara los datos exactos de cada documento (lee MB52 para elegir un lote que cubra la cantidad) y calcula la huella → el diálogo enseña
+  los datos (con el texto del motivo) → hay que **teclear CONTABILIZAR** → el servidor recalcula y solo continúa si la huella coincide.
+- Máximo 5 documentos por ejecución. Un solo material por escenario y un solo lote que cubra la cantidad (repartir entre lotes aún no).
+- Cada documento: stock antes (MB52) → MIGO (Check + Post) → stock después, y se marca CONTABILIZADO solo si el stock cambió como se esperaba. Se guarda el nº de documento de material.
+- Pendiente: leer el documento y sus apuntes FI/CO/ML; STO (ME21N/VL10B); 301, 321/322, 541.
