@@ -14,6 +14,19 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
   El usuario siempre lo confirma en el front antes de lanzar (el servidor rechaza escenarios sin confirmar).
 - Lotes FEFO/FIFO, stock insuficiente = movimiento parcial, entorno sandbox/QAS.
 
+## Interpretación del Data y datos que faltan
+- El `Data` del paso 1 se interpreta en: centro origen/destino, almacén origen/destino, material(es), cantidad, vendor, CECO, orden, PO, lote, motivo.
+- Si solo hay un centro, es origen y destino. En 343/344/321/322 el almacén destino es el de origen.
+- `requisitos_movimiento.json` define qué exige SAP por movimiento (p. ej. 541/542 vendor, 201/551 CECO, 261 orden, 101 PO, 315/305 doc. de referencia).
+  Si falta algún campo, el escenario no se ejecuta (FALTAN_DATOS) y la pantalla pide el dato.
+- Prioridad de valores: aportado por el usuario > Excel > derivado / valor por centro > cantidad por defecto.
+- Lo aportado se guarda en `data/` (por escenario o como valor por centro en `valores_centro.json`), nunca en git.
+- Cantidad: valor global editable en la pantalla (por defecto 1), con posibilidad de fijarla por escenario.
+- 701/702 no se hacen con MIGO (inventario físico MI01/MI04/MI07): estado NO_SOPORTADO. Movimientos sin requisitos definidos
+  (325, 707/708, Z..) usan requisitos mínimos y se avisan; validar con consultor MM.
+- Con SAP conectado (fase posterior): si falta material o almacén se buscarán candidatos con stock en MB52 y el usuario elige;
+  nunca se elige uno automáticamente. También se comprobarán lote (marca en maestro), periodo abierto, bloqueos y almacén WM.
+
 ## Salida (pestañas, descargables en CSV)
 - MM: movimientos y documentos de material (MB52 + MIGO).
 - FI: apuntes contables por documento de material (FB03).

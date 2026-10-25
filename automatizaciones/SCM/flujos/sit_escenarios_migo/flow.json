@@ -2,10 +2,36 @@
   "nombre": "Escenarios SIT con MIGO",
   "tipo": "sit_jira",
   "descripcion": "Escenarios del Excel SIT (Jira) con L1 = SCM y L2 = Logistics Flows cuyo paso 1 es una MIGO. Los pasos siguientes (FI, CO, ML, MM) se entregan como paquete de validación.",
-  "palabras_clave": ["sit", "escenario", "escenarios", "migo", "jira", "movimiento", "movimientos", "material", "validacion"],
-  "filtro": {"L1": "5.SCM", "L2": ["5.6 Logistics Flows"]},
-  "columnas_por_defecto": ["L3", "External ID - JIRA", "JIRA ID", "Location by Unit", "Test Scenario", "Test Step Description", "Transaction", "Data"],
-  "filtros_columnas": ["L3", "Location by Unit"],
+  "palabras_clave": [
+    "sit",
+    "escenario",
+    "escenarios",
+    "migo",
+    "jira",
+    "movimiento",
+    "movimientos",
+    "material",
+    "validacion"
+  ],
+  "filtro": {
+    "L1": "5.SCM",
+    "L2": [
+      "5.6 Logistics Flows"
+    ]
+  },
+  "columnas_por_defecto": [
+    "L3",
+    "External ID - JIRA",
+    "JIRA ID",
+    "Location by Unit",
+    "Test Scenario",
+    "Test Step Description",
+    "Transaction"
+  ],
+  "filtros_columnas": [
+    "L3",
+    "Location by Unit"
+  ],
   "reglas": {
     "estrategia_lote": "FEFO_FIFO",
     "stock_insuficiente": "PARCIAL",

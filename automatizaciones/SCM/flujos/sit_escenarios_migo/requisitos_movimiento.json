@@ -1,0 +1,268 @@
+{
+  "_nota": "Datos que SAP exige para cada clase de movimiento en MIGO. Genérico (sin datos de cliente). Validar con consultor MM: la configuración real (OMJJ, campos obligatorios) puede variar por cliente.",
+  "campos": {
+    "centro": "Centro origen",
+    "alm_origen": "Almacén origen",
+    "centro_destino": "Centro destino",
+    "alm_destino": "Almacén destino",
+    "material": "Material",
+    "cantidad": "Cantidad",
+    "vendor": "Vendor (proveedor)",
+    "ceco": "Centro de coste",
+    "orden": "Orden",
+    "po": "Pedido (PO)",
+    "motivo": "Motivo del movimiento",
+    "doc_ref": "Doc. de material de referencia"
+  },
+  "generico": {
+    "nombre": "Movimiento sin definir",
+    "requiere": [
+      "centro",
+      "alm_origen",
+      "material",
+      "cantidad"
+    ],
+    "desconocido": true,
+    "nota": "Requisitos no definidos para este movimiento: valídalos con un consultor MM."
+  },
+  "movimientos": {
+    "311": {
+      "nombre": "Traslado entre almacenes (1 paso)",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "alm_destino",
+        "material",
+        "cantidad"
+      ]
+    },
+    "313": {
+      "nombre": "Traslado entre almacenes, salida (2 pasos)",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "alm_destino",
+        "material",
+        "cantidad"
+      ]
+    },
+    "315": {
+      "nombre": "Traslado entre almacenes, entrada (2 pasos)",
+      "requiere": [
+        "centro",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "doc_ref"
+      ],
+      "nota": "Necesita el documento del 313."
+    },
+    "301": {
+      "nombre": "Traslado entre centros (1 paso)",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "centro_destino",
+        "alm_destino",
+        "material",
+        "cantidad"
+      ],
+      "destino_distinto": true
+    },
+    "303": {
+      "nombre": "Traslado entre centros, salida (2 pasos)",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "centro_destino",
+        "material",
+        "cantidad"
+      ],
+      "destino_distinto": true
+    },
+    "305": {
+      "nombre": "Traslado entre centros, entrada (2 pasos)",
+      "requiere": [
+        "centro_destino",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "doc_ref"
+      ],
+      "nota": "Necesita el documento del 303.",
+      "destino_distinto": true
+    },
+    "321": {
+      "nombre": "Calidad a libre utilización",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "alm_destino_igual_origen": true
+    },
+    "322": {
+      "nombre": "Libre utilización a calidad",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "alm_destino_igual_origen": true
+    },
+    "343": {
+      "nombre": "Bloqueado a libre utilización",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "alm_destino_igual_origen": true
+    },
+    "344": {
+      "nombre": "Libre utilización a bloqueado",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "alm_destino_igual_origen": true
+    },
+    "541": {
+      "nombre": "Traslado a stock de subcontratista",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "vendor",
+        "material",
+        "cantidad"
+      ]
+    },
+    "542": {
+      "nombre": "Devolución de stock de subcontratista",
+      "requiere": [
+        "centro",
+        "alm_destino",
+        "vendor",
+        "material",
+        "cantidad"
+      ]
+    },
+    "201": {
+      "nombre": "Salida a centro de coste",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "ceco",
+        "material",
+        "cantidad"
+      ]
+    },
+    "202": {
+      "nombre": "Anulación de salida a centro de coste",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "ceco",
+        "material",
+        "cantidad"
+      ]
+    },
+    "261": {
+      "nombre": "Salida a orden",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "orden",
+        "material",
+        "cantidad"
+      ]
+    },
+    "262": {
+      "nombre": "Anulación de salida a orden",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "orden",
+        "material",
+        "cantidad"
+      ]
+    },
+    "551": {
+      "nombre": "Salida por desguace",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "ceco",
+        "material",
+        "cantidad"
+      ],
+      "nota": "Según configuración puede exigir motivo del movimiento."
+    },
+    "101": {
+      "nombre": "Entrada de mercancía contra pedido u orden",
+      "requiere": [
+        "centro",
+        "alm_destino",
+        "po",
+        "material",
+        "cantidad"
+      ],
+      "nota": "Si es contra orden de producción, indica la orden en lugar del pedido."
+    },
+    "102": {
+      "nombre": "Anulación de entrada",
+      "requiere": [
+        "centro",
+        "material",
+        "cantidad",
+        "doc_ref"
+      ]
+    },
+    "501": {
+      "nombre": "Entrada sin pedido",
+      "requiere": [
+        "centro",
+        "alm_destino",
+        "material",
+        "cantidad"
+      ]
+    },
+    "502": {
+      "nombre": "Anulación de entrada sin pedido",
+      "requiere": [
+        "centro",
+        "alm_destino",
+        "material",
+        "cantidad",
+        "doc_ref"
+      ]
+    },
+    "701": {
+      "nombre": "Diferencia de inventario (+)",
+      "transaccion": "MI07",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "nota": "No se hace con MIGO: requiere documento de inventario físico (MI01, MI04, MI07)."
+    },
+    "702": {
+      "nombre": "Diferencia de inventario (-)",
+      "transaccion": "MI07",
+      "requiere": [
+        "centro",
+        "alm_origen",
+        "material",
+        "cantidad"
+      ],
+      "nota": "No se hace con MIGO: requiere documento de inventario físico (MI01, MI04, MI07)."
+    }
+  }
+}

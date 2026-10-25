@@ -16,6 +16,11 @@ ALIAS = {
     "cantidad": ["cantidad", "menge", "qty"],
     "um": ["um", "unidad", "unidad de medida", "meins"],
     "lote": ["lote", "charg", "batch"],
+    "vendor": ["vendor", "proveedor"],
+    "ceco": ["ceco", "centro de coste"],
+    "orden": ["orden"],
+    "po": ["po", "pedido"],
+    "motivo": ["motivo"],
 }
 REQUIRED = ["tipo_mov", "material", "centro", "alm_origen", "cantidad"]
 
@@ -41,7 +46,7 @@ class SapBackend:
     def mb52(self, material, centro, almacen):
         raise NotImplementedError
 
-    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino):
+    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino, extra=None):
         raise NotImplementedError
 
 
@@ -63,7 +68,7 @@ class MockSap(SapBackend):
                    "entrada": "2026-%02d-01" % (1 + (h >> (i + 2)) % 12)} for i in range(n)]
         return {"lotes_activo": True, "lineas": lineas}
 
-    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino):
+    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino, extra=None):
         return "SIM-%010d" % (self._h(tipo_mov, material, lote, cantidad) % 10**10)
 
     # --- Apuntes derivados del documento de material (en SAP real: FB03, KE24, CKM3N) ---
@@ -128,7 +133,8 @@ def run(headers, rows, backend, log):
                         break
                     q = min(pendiente, l["qty"])
                     doc = backend.migo(res["tipo_mov"], res["material"], res["centro"], res["almacen"], l["lote"], q, g(r, "um"),
-                                       (g(r, "centro_destino"), g(r, "alm_destino")))
+                                       (g(r, "centro_destino"), g(r, "alm_destino")),
+                                       {k: g(r, k) for k in ("vendor", "ceco", "orden", "po", "motivo")})
                     res["documentos"].append({"doc": doc, "lote": l["lote"], "cantidad": q})
                     pendiente -= q
                 res["movida"] = a_mover

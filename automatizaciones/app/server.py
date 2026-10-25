@@ -108,7 +108,23 @@ def load_catalog(d):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 
-def execute_sit(stream, flow, claves, run_id):
+def load_req(d):
+    return json.loads((d / "requisitos_movimiento.json").read_text(encoding="utf-8"))
+
+
+def defaults_path(d):
+    return d / "data" / "valores_centro.json"
+
+
+def load_defaults(d):
+    p = defaults_path(d)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+VALOR = re.compile(r"^[A-Za-z0-9_\-\. /,;]{0,60}$")
+
+
+def execute_sit(stream, flow, claves, run_id, cantidad):
     d = flow_dir(stream, flow)
     meta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
     path = d / "results" / (run_id + ".json")
@@ -126,7 +142,8 @@ def execute_sit(stream, flow, claves, run_id):
     try:
         log("INFO", "Modo SIMULADO: no se conecta a SAP. IDoc/EDI fuera de alcance.")
         sel = [e for e in load_catalog(d) if e["clave"] in set(claves)]
-        out, run["resumen"] = sit_engine.ejecutar(sel, engine.MockSap(), log, meta.get("cantidad_por_defecto", 1))
+        log("INFO", "Cantidad por defecto: %s" % cantidad)
+        out, run["resumen"] = sit_engine.ejecutar(sel, engine.MockSap(), log, cantidad, load_req(d), load_defaults(d))
         run.update(out)
         run["estado"] = "FINALIZADA"
     except Exception as e:
@@ -250,7 +267,9 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/sit/catalog":
             d = flow_dir(q.get("stream", ""), q.get("flow", ""))
             mp = d / "data" / "catalogo_meta.json"
-            return self._send(200, {"meta": json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}, "escenarios": load_catalog(d)})
+            return self._send(200, {"meta": json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}, "escenarios": load_catalog(d),
+                                    "requisitos": load_req(d), "defaults": load_defaults(d),
+                                    "cantidad_por_defecto": json.loads((d / "flow.json").read_text(encoding="utf-8")).get("cantidad_por_defecto", 1)})
         if u.path == "/api/runs":
             return self._send(200, list_runs())
         m = re.match(r"^/api/runs/([^/]+)$", u.path)
@@ -305,6 +324,8 @@ class Handler(BaseHTTPRequestHandler):
                 o = previo.get(e["clave"])
                 if o and o.get("confirmado"):
                     e["mov"], e["confirmado"] = o["mov"], True
+                if o and o.get("aportados"):
+                    e["aportados"] = o["aportados"]
             catalog_path(d).write_text(json.dumps(nuevo, ensure_ascii=False), encoding="utf-8")
             return self._send(200, {"ok": True, "escenarios": len(nuevo), "meta": stats})
         if u.path == "/api/sit/confirm":
@@ -317,6 +338,34 @@ class Handler(BaseHTTPRequestHandler):
                     idx[it["clave"]]["mov"], idx[it["clave"]]["confirmado"] = mov, True
             catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
             return self._send(200, {"ok": True, "confirmados": sum(1 for e in cat if e["confirmado"])})
+        if u.path == "/api/sit/completar":
+            d = flow_dir(data.get("stream", ""), data.get("flow", ""))
+            campos = load_req(d)["campos"]
+            cat = load_catalog(d)
+            idx = {e["clave"]: e for e in cat}
+
+            def limpio(v):
+                out = {}
+                for k, x in (v or {}).items():
+                    x = str(x).strip()
+                    if k in campos and VALOR.match(x):
+                        out[k] = x
+                return out
+            for it in data.get("items", []):
+                e = idx.get(it.get("clave"))
+                if e is not None:
+                    e["aportados"] = {**e.get("aportados", {}), **limpio(it.get("valores"))}
+                    e["aportados"] = {k: v for k, v in e["aportados"].items() if v}
+            cd = data.get("centro_default")
+            if cd:
+                centro = str(cd.get("centro", "")).strip()
+                if not re.match(r"^[A-Za-z0-9]{1,6}$", centro):
+                    raise ValueError("Centro no válido")
+                df = load_defaults(d)
+                df[centro] = {k: v for k, v in {**df.get(centro, {}), **limpio(cd.get("valores"))}.items() if v}
+                defaults_path(d).write_text(json.dumps(df, ensure_ascii=False), encoding="utf-8")
+            catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
+            return self._send(200, {"ok": True, "escenarios": cat, "defaults": load_defaults(d)})
         if u.path == "/api/sit/run":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             claves = [str(c) for c in data.get("claves", [])]
@@ -326,7 +375,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Hay escenarios sin confirmar el tipo de movimiento: %d" % len(sin) if claves else "No hay escenarios seleccionados")
             with LOCK:
                 rid = time.strftime("%Y%m%d-%H%M%S-") + "%04x" % (time.time_ns() & 0xFFFF)
-            threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid), daemon=True).start()
+            try:
+                cantidad = float(str(data.get("cantidad", 1)).replace(",", "."))
+            except ValueError:
+                raise ValueError("Cantidad no válida")
+            if not 0 < cantidad <= 1000000:
+                raise ValueError("Cantidad fuera de rango")
+            cantidad = int(cantidad) if cantidad == int(cantidad) else cantidad
+            threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid, cantidad), daemon=True).start()
             return self._send(200, {"ok": True, "id": rid})
         if u.path == "/api/nl":
             return self._send(200, interpret(str(data.get("text", ""))[:500], data.get("stream", ""), data.get("flow", "")))
