@@ -33,3 +33,5 @@ No hay derivación de centro destino = origen (en un STO son distintos). Lo que 
 - En la tabla, cada escenario muestra **OK** (datos completos) o **NOK · n** (faltan n datos); al pulsarlo se abre el detalle para ver y modificar.
 - Cantidad: si no se indica (Excel, escenario o centro) se usa el valor por defecto de la pantalla. Con SAP conectado, el chequeo propone la cantidad
   desde el stock libre del lote elegido y se usa solo si la aceptas antes de lanzar. El motor simulado no propone cantidades.
+- Al abrir un escenario (pulsando su OK/NOK) se ve **«Qué haría en SAP si se lanzara ahora»**: los pasos con su transacción y los valores concretos
+  (lo que falta aparece como FALTA). Los datos que escribes en el detalle se guardan al salir del campo o al pulsar Intro.

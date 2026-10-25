@@ -299,6 +299,42 @@ async function guardar(e, inputs, comoCentro) {
   } catch (err) { note($("sitOut"), err.message, true); }
 }
 
+function planSap(e, r, mov) {
+  const val = (f) => { const x = r.vals[f]; return x ? (Array.isArray(x) ? x.join(", ") : x) : null; };
+  const par = (a, b) => (val(a) && val(b) ? `${val(a)} / ${val(b)}` : null);
+  const kv = (rows) => h("div", { style: "margin-left:14px" }, ...rows.map(([k, x, nota]) => h("div", {}, h("span", { class: "muted" }, k + ": "),
+    x ? h("b", {}, x) : chip("ERROR", "FALTA"), nota ? h("span", { class: "muted" }, " " + nota) : "")));
+  const paso = (n, trans, titulo, filas, nota) => h("div", { style: "margin-bottom:8px" }, h("div", {}, h("b", {}, `${n}. ${trans}`), " · " + titulo), kv(filas),
+    nota ? h("div", { class: "muted", style: "margin-left:14px" }, nota) : "");
+  const box = h("div", { style: "margin-top:10px;padding:8px 10px;border:1px dashed var(--pri);border-radius:6px;background:#f8faff" },
+    h("h3", { style: "margin-top:0" }, "Qué haría en SAP si se lanzara ahora"));
+  if (r.req.transaccion) return box.appendChild(h("div", {}, chip("ERROR", "No soportado"), " " + r.req.nota)) && box;
+  if (!movOk(mov)) return box.appendChild(h("div", { class: "muted" }, `Indica antes ${etq().clase.toLowerCase()} para ver el plan.`)) && box;
+  const wm = ["S", "SI", "SÍ", "Y", "YES", "1"].includes(String(r.vals.wm || "").toUpperCase());
+  const cant = r.src.cantidad === "global" ? "(por defecto; con SAP se propondrá desde el stock y la confirmas tú)" : `(${r.src.cantidad})`;
+  if (esSto()) {
+    box.append(
+      paso(1, "ME13", "Comprobar el registro info de cada material", [["Materiales", val("material")], ["Proveedor", `vendor del centro ${val("centro") || "—"}`, "(se lee en SAP)"],
+        ["Org. compras", val("org_compras")], ["Centro", val("centro")]], "Si falta alguno, se para el escenario y se avisa (darlo de alta con ME11 sería manual)."),
+      paso(2, wm ? "LS24 / LX02" : "MB52", wm ? "Buscar stock libre en cuantos WM" : "Buscar stock libre", [["Centro / almacén suministrador", par("centro", "alm_origen")],
+        ["Lote", "FEFO / FIFO: el primero con stock"], ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se traslada lo disponible (parcial)."),
+      paso(3, "ME21N", `Crear el pedido de traslado ${mov}`, [["Org. compras / grupo / sociedad", val("org_compras") && val("grupo_compras") && val("sociedad") ? `${val("org_compras")} / ${val("grupo_compras")} / ${val("sociedad")}` : null],
+        ["Centro suministrador", val("centro")], ["Centro / almacén receptor", par("centro_destino", "alm_destino")], ["Posiciones", val("material") ? `${val("material")} · cantidad ${val("cantidad") || "—"} · lote del paso 2` : null]]),
+      paso(4, "VL01N", "Crear la entrega de salida por referencia al STO", [["Punto de expedición", "lo determina SAP"], ["Posiciones", "las del STO, con su lote"]],
+        "La fase 1 termina aquí: no se hace picking (VL02N) ni salida de mercancía. Los pasos siguientes del Excel se entregan para validar."));
+  } else {
+    const extra = r.req.requiere.filter((f) => !["centro", "alm_origen", "material", "cantidad", "centro_destino", "alm_destino"].includes(f)).map((f) => [lab(f), val(f)]);
+    box.append(
+      paso(1, "MB52", "Buscar stock libre y lote", [["Centro / almacén origen", par("centro", "alm_origen")], ["Material(es)", val("material")], ["Lote", "FEFO / FIFO: el primero con stock"],
+        ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se mueve lo disponible (parcial)."),
+      paso(2, "MIGO", `Contabilizar el movimiento ${mov}${r.req.nombre ? " · " + r.req.nombre : ""}`, [["Centro / almacén origen", par("centro", "alm_origen")],
+        ...(r.req.requiere.includes("centro_destino") || r.req.requiere.includes("alm_destino") ? [["Centro / almacén destino", par("centro_destino", "alm_destino") || (val("alm_destino") ? `${val("centro_destino") || val("centro")} / ${val("alm_destino")}` : null)]] : []),
+        ...extra]),
+      paso(3, "FB03 / KE24 / CKM3N", "Leer el resultado", [["Se leen", "documento de material y sus apuntes FI, CO y ML"]], "Se entregan a los equipos que validan."));
+  }
+  return box;
+}
+
 function detailRow(e, span) {
   const d = e.datos;
   const mov = movOf(e);
@@ -314,12 +350,14 @@ function detailRow(e, span) {
     const inp = h("input", { type: "text", style: "width:100%", placeholder: v ? "" : "obligatorio" });
     inp.value = Array.isArray(v) ? v.join(", ") : (v || "");
     inputs[f] = inp;
+    inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));   // se guarda al salir del campo o con Intro
     grid.append(h("span", {}, lab(f)), inp, v ? h("span", { class: "muted" }, r.src[f]) : chip("ERROR", "falta"));
   }
-  form.append(grid, h("div", { class: "row", style: "margin-top:8px" },
+  form.append(grid, h("div", { class: "muted", style: "margin-top:6px" }, "Los cambios se guardan al salir del campo o al pulsar Intro."), h("div", { class: "row", style: "margin-top:8px" },
     h("button", { onclick: () => guardar(e, inputs, false) }, "Guardar en este escenario"),
     h("button", { class: "sec", onclick: () => guardar(e, inputs, true), title: "Se aplicará a todos los escenarios de este centro que no traigan el dato" },
       `Guardar como valor del centro ${e.interpretado.centro || "—"}`)));
+  form.append(planSap(e, r, mov));
   form.append(h("div", { class: "muted", style: "margin-top:6px" }, e.mov_origen + (e.mov_nota ? " · " + e.mov_nota : "")),
     ...avisos(e).map((a) => h("div", {}, chip("WARN", "Aviso"), " " + a)),
     h("h3", {}, `Datos del Excel (${etq().paso})`), h("pre", {}, e.fila1["Data"] || ""),
