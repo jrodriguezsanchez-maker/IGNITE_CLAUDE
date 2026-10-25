@@ -13,6 +13,7 @@ import sys
 import time
 
 import os
+import threading
 from pathlib import Path
 
 
@@ -62,11 +63,19 @@ def _attr(o, nombre, defecto=""):
         return defecto
 
 
+_TL = threading.local()
+ATTACHES = 0          # cuántas veces se ha enganchado este proceso a SAP GUI (cada una provoca un aviso en SAP)
+
+
 def _engine():
+    """Objeto de scripting de SAP GUI. Se reutiliza en el mismo hilo para engancharse una sola vez (cada enganche provoca un aviso de SAP)."""
     if win32com is None:
         raise SapError(msg_falta_pywin32())
+    global ATTACHES
     try:
-        return win32com.client.GetObject("SAPGUI").GetScriptingEngine
+        engine = win32com.client.GetObject("SAPGUI").GetScriptingEngine
+        ATTACHES += 1
+        return engine
     except pythoncom.com_error:
         raise SapError("No se puede enganchar a SAP GUI (¿SAP Logon cerrado o scripting desactivado?)")
 
@@ -93,8 +102,12 @@ def _sesiones(engine, sid, mandante=None, conexion=None):
         if not _conexion_permitida(con, sid, conexion):
             continue
         for j in range(con.Children.Count):
-            s = con.Children.Item(j)
-            if str(s.Info.SystemName).upper() == str(sid).upper() and (mandante is None or str(s.Info.Client) == str(mandante)):
+            try:
+                s = con.Children.Item(j)
+                ok = str(s.Info.SystemName).upper() == str(sid).upper() and (mandante is None or str(s.Info.Client) == str(mandante))
+            except Exception:
+                continue                  # una ventana se cerró mientras se listaba: se ignora
+            if ok:
                 res.append((con, s))
     return res
 
@@ -217,7 +230,22 @@ def _buscar_grid(o):
     return None
 
 
-def consultar(ses, material, centro, almacen="", lotes=True, especiales=False, max_filas=500):
+def _celda(grid, fila, col):
+    """GetCellValue; tras desplazar, SAP puede responder «datos aún no disponibles» (0x8000000A): se espera y se reintenta."""
+    t0 = time.time()
+    while True:
+        try:
+            return grid.GetCellValue(fila, col)
+        except Exception as e:
+            if getattr(e, "hresult", None) != -2147483638 or time.time() - t0 > 8:
+                raise
+            time.sleep(0.15)
+
+
+COLUMNAS_STOCK = ("MATNR", "MAKTX", "WERKS", "LGORT", "CHARG", "MEINS", "LABST", "INSME", "SPEME", "UMLME", "EINME")   # las que usa el chequeo
+
+
+def consultar(ses, material, centro, almacen="", lotes=True, especiales=False, max_filas=5000, material_hasta="", columnas=None):
     """Devuelve {"mensaje", "columnas": [(nombre, titulo)], "filas": [dict]}."""
     if str(ses.Info.Transaction) != "SESSION_MANAGER":
         raise SapError("La sesión no está en la pantalla inicial (transacción %s): no se interrumpe tu trabajo." % ses.Info.Transaction)
@@ -235,6 +263,7 @@ def consultar(ses, material, centro, almacen="", lotes=True, especiales=False, m
             raise SapError("Ventana emergente al abrir MB52 (no se pulsa nada).")
         usr = "wnd[0]/usr/"
         ses.findById(usr + "ctxtMATNR-LOW").text = str(material)
+        ses.findById(usr + "ctxtMATNR-HIGH").text = str(material_hasta)      # rango de materiales (vacío = un solo material o todos)
         ses.findById(usr + "ctxtWERKS-LOW").text = str(centro)
         ses.findById(usr + "ctxtLGORT-LOW").text = str(almacen)
         ses.findById(usr + "chkXMCHB").selected = bool(lotes)         # una línea por lote
@@ -258,10 +287,30 @@ def consultar(ses, material, centro, almacen="", lotes=True, especiales=False, m
             except Exception:
                 titulo = nombre
             cols.append((nombre, titulo))
-        filas = []
-        for r in range(min(grid.RowCount, max_filas)):
-            filas.append({n: grid.GetCellValue(r, n) for n, _ in cols})
-        return {"mensaje": mensaje, "columnas": cols, "filas": filas, "total_filas": grid.RowCount, "grid": _attr(grid, "Id")}
+        # El ALV carga las filas por bloques según se desplaza: sin desplazarlo, las filas fuera del bloque inicial salen EN BLANCO (se veían solo ~97).
+        # Se recorre toda la tabla desplazándola y, si al final quedan filas vacías (aparte de la de totales), se aborta en lugar de dar datos parciales.
+        usar = [n for n, _ in cols if columnas is None or n in columnas]
+        total = int(grid.RowCount)
+        visibles = max(int(_attr(grid, "VisibleRowCount", 20) or 20), 10)
+        leidas = {}
+        r = 0
+        while r < total and len(leidas) < max_filas:
+            try:
+                grid.firstVisibleRow = r
+            except Exception:
+                pass
+            t0 = time.time()
+            while ses.Busy and time.time() - t0 < 10:
+                time.sleep(0.05)
+            for i in range(r, min(r + visibles + 2, total)):
+                if i not in leidas:
+                    leidas[i] = {n: _celda(grid, i, n) for n in usar}
+            r += visibles
+        filas = [leidas[i] for i in sorted(leidas)]
+        vacias = sum(1 for f in filas[:-1] if all(not str(v).strip() for v in f.values()))   # la última fila es la de totales (sin material)
+        if vacias > 0 and len(leidas) >= total:
+            raise SapError("Lectura incompleta de MB52: %d de %d filas llegaron vacías. No se usan datos parciales." % (vacias, total))
+        return {"mensaje": mensaje, "columnas": cols, "filas": filas, "total_filas": total, "leidas": len(leidas), "vacias": vacias, "grid": _attr(grid, "Id")}
     finally:
         try:
             ir("/n")

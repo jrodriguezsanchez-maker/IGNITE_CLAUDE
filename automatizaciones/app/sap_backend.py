@@ -7,11 +7,13 @@ Seguridad:
   - Límite de consultas por chequeo para no saturar el sistema.
 """
 import json
+import time
 from pathlib import Path
 
 import engine
 
 CONFIG = Path(__file__).resolve().parent.parent / "conexion_local.json"
+_STOCK_TTL = {}
 MAX_CONSULTAS = 25
 
 
@@ -37,7 +39,9 @@ def estado():
         return {"ok": False, "mensaje": sap_mb52.msg_falta_pywin32()}
     pythoncom.CoInitialize()
     try:
-        return sap_mb52.estado(cfg.get("sistemas_permitidos") or [])
+        r = sap_mb52.estado(cfg.get("sistemas_permitidos") or [])
+        r["enganches"] = sap_mb52.ATTACHES
+        return r
     finally:
         pythoncom.CoUninitialize()
 
@@ -111,13 +115,17 @@ class SapGuiBackend(engine.SapBackend):
         clave = (str(material), str(centro), str(almacen))
         if clave in self._cache:
             return self._cache[clave]
+        hit = _STOCK_TTL.get(clave)
+        if hit and time.time() - hit[0] < 45:        # se acaba de leer (p. ej. al preparar): no se vuelve a consultar SAP
+            self._cache[clave] = hit[1]
+            return hit[1]
         if self._consultas >= MAX_CONSULTAS:
             raise self._mb52.SapError("Límite de %d consultas a SAP por chequeo: reduce la selección." % MAX_CONSULTAS)
         self._consultas += 1
         # defensa en profundidad: justo antes de actuar se vuelve a comprobar que la sesión es del sistema y mandante permitidos
         if str(self.ses.Info.SystemName).upper() != str(self.sid).upper() or str(self.ses.Info.Client) != str(self.mandante):
             raise self._mb52.SapError("La sesión ya no es del sistema permitido (%s/%s): se aborta." % (self.sid, self.mandante))
-        r = self._mb52.consultar(self.ses, material, centro, almacen, lotes=True, especiales=False)
+        r = self._mb52.consultar(self.ses, material, centro, almacen, lotes=True, especiales=False, columnas=self._mb52.COLUMNAS_STOCK)
         lineas = []
         for f in r["filas"]:
             if not str(f.get("MATNR", "")).strip():
@@ -130,6 +138,7 @@ class SapGuiBackend(engine.SapBackend):
             raise self._mb52.SapError("MB52: " + r["mensaje"])
         st = {"lotes_activo": any(l["lote"] for l in lineas), "lineas": lineas, "fuente": "MB52"}
         self._cache[clave] = st
+        _STOCK_TTL[clave] = (time.time(), st)
         return st
 
     # --- lectura (implementada) ---

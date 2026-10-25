@@ -136,10 +136,19 @@ def load_defaults(d):
 VALOR = re.compile(r"^[A-Za-z0-9_\-\. /,;]{0,60}$")
 
 
-MAX_DOCS_REAL = 5
+MAX_DOCS_REAL = 25      # una sola confirmación por lanzamiento (no una por documento)
 
 
-def preparar_real(d, claves, cantidad_global):
+def en_sap(fn, *args):
+    """Con el modo «SAP real», las operaciones con SAP van al hilo único (un solo enganche, sin avisos repetidos); en simulado se ejecutan sin más."""
+    return fn(*args)     # (se probó un hilo único para SAP y tumbaba el proceso con un fallo de COM: se ejecuta directamente, como antes)
+
+
+_PREPARADOS = {}          # clave -> {"lote": ..., "ts": ...}: lo que «preparar» enseñó al usuario (para no volver a leer SAP al contabilizar)
+PREPARADO_TTL = 600       # 10 minutos
+
+
+def preparar_real(d, claves, cantidad_global, lotes_ya_elegidos=None):
     """Datos exactos de cada documento que se contabilizaría y su huella. Lee SAP (MB52, solo lectura) únicamente para elegir el lote si no está fijado."""
     import sap_backend
     import sap_migo
@@ -172,28 +181,47 @@ def preparar_real(d, claves, cantidad_global):
                 if not 0 < cant <= sap_migo.MAX_CANTIDAD:
                     fila["problema"] = "Cantidad no válida."
                 else:
-                    if be is None:
-                        be = engine.crear_backend("chequeo")            # SAP real, solo lectura
-                    st = be.stock_origen(mat, centro, alm, False)
                     lote = (vals.get("lote") or "").strip()
-                    lineas = sorted([l for l in st["lineas"] if l["qty"] > 0], key=engine._orden)
-                    if lote:
-                        cubre = [l for l in lineas if l["lote"] == lote and l["qty"] >= cant]
+                    if lotes_ya_elegidos is not None and c in lotes_ya_elegidos:
+                        lote, cubierto = lotes_ya_elegidos[c], True      # lo vio el usuario al preparar; el Check de MIGO vuelve a validar el stock
+                    elif lote:
+                        cubierto = True                                  # lote fijado por el usuario: sin leer SAP; MIGO valida el stock al contabilizar
                     else:
+                        if be is None:
+                            be = engine.crear_backend("chequeo")         # SAP real, solo lectura
+                        st = be.stock_origen(mat, centro, alm, False)
+                        lineas = sorted([l for l in st["lineas"] if l["qty"] > 0], key=engine._orden)
                         cubre = [l for l in lineas if l["qty"] >= cant] if st["lotes_activo"] else lineas
                         lote = cubre[0]["lote"] if cubre and st["lotes_activo"] else ""
-                    if not cubre or sum(l["qty"] for l in cubre) < cant:
+                        cubierto = bool(cubre) and sum(l["qty"] for l in cubre) >= cant
+                    if not cubierto:
                         fila["problema"] = "Ningún lote libre cubre %s por sí solo (repartir entre varios lotes aún no está soportado)." % vals["cantidad"]
                     else:
                         dest = vals.get("alm_destino", "") if e["mov"] in sap_migo.CON_DESTINO else ""
                         fila.update({"ok": True, "material": mat, "centro": centro, "almacen": alm, "almacen_destino": dest, "lote": lote,
-                                     "cantidad": str(vals["cantidad"]), "motivo": vals.get("motivo", ""), "um": ""})
+                                     "cantidad": sap_migo.normalizar_cantidad(vals["cantidad"]), "motivo": vals.get("motivo", ""), "um": ""})
                         fila["huella"] = sap_migo.huella(e["mov"], mat, centro, alm, lote, fila["cantidad"], fila["motivo"], dest)
             out.append(fila)
     finally:
         if be is not None and hasattr(be, "cerrar"):
             be.cerrar()
     return out
+
+
+def ejecuciones(d):
+    p = d / "data" / "ejecuciones.json"          # data/ está fuera de git
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def registrar_ejecucion(d, clave, estado, documento, run_id):
+    """Último resultado real de cada escenario: OK (contabilizado y stock verificado), REVISAR (stock distinto del esperado) o KO (error)."""
+    if not clave:
+        return
+    e = ejecuciones(d)
+    e[clave] = {"estado": estado, "documento": documento or "", "run": run_id, "fecha": time.strftime("%Y-%m-%d %H:%M:%S")}
+    p = d / "data" / "ejecuciones.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(e, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def execute_real(stream, flow, items, run_id):
@@ -253,11 +281,28 @@ def execute_real(stream, flow, items, run_id):
                 esc.update({"estado": fila["estado"], "detalle": ("Documento %s. " % res["documento"]) + res["mensaje"] +
                             ("" if esperado else " · OJO: el stock no cambió como se esperaba")})
                 resumen["CONTABILIZADO"] += 1
+                if res["documento"]:                   # documentos contables (FI, CO, ML) con MIGO Display + «FI Documents»; si falla, no invalida la contabilización
+                    try:
+                        import sap_docs
+                        cont = sap_docs.leer_documento(ses, res["documento"], time.strftime("%Y"))
+                        for c in cont["contables"]:
+                            clave_doc = {"FI": "doc_fi", "CO": "doc_co", "ML": "doc_ml"}.get(c["categoria"])
+                            if clave_doc:
+                                run[c["categoria"].lower()].append({**base, "doc_material": res["documento"], clave_doc: c["documento"], "sociedad": c["sociedad"], "tipo": c["tipo"]})
+                        if cont.get("sin_contabilidad"):
+                            txt = "Este movimiento no genera documentos contables (FI, CO ni ML)."
+                        else:
+                            txt = "Contabilidad: " + (", ".join("%s %s" % (c["categoria"], c["documento"]) for c in cont["contables"]) or "; ".join(cont["avisos"]))
+                        log("INFO", "%s %s" % (it["jira_id"], txt))
+                        fila["detalle"] = (fila["detalle"] + " · " + txt)[:600]
+                    except Exception as ex2:
+                        log("AVISO", "%s: no se pudieron leer los documentos contables: %s" % (it["jira_id"], str(ex2)[:300]))
             except Exception as ex:                     # un documento fallido no continúa con los demás sin que el usuario lo vea
                 log("ERROR", "%s: %s" % (it["jira_id"], ex))
                 fila.update({"estado": "ERROR", "detalle": str(ex)[:400]})
                 esc.update({"estado": "ERROR", "detalle": str(ex)[:400]})
                 resumen["ERROR"] += 1
+            registrar_ejecucion(d, it.get("clave"), {"CONTABILIZADO": "OK", "ERROR": "KO"}.get(fila["estado"], "REVISAR"), fila["documentos"], run_id)
             run["mm"].append(fila)
             run["escenarios"].append(esc)
             run["resumen"] = resumen
@@ -431,7 +476,10 @@ class Handler(BaseHTTPRequestHandler):
             mp = d / "data" / "catalogo_meta.json"
             return self._send(200, {"meta": json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}, "escenarios": load_catalog(d),
                                     "requisitos": load_req(d), "defaults": load_defaults(d), "motivos": load_motivos(d),
-                                    "cantidad_por_defecto": json.loads((d / "flow.json").read_text(encoding="utf-8")).get("cantidad_por_defecto", 1)})
+                                    "cantidad_por_defecto": json.loads((d / "flow.json").read_text(encoding="utf-8")).get("cantidad_por_defecto", 1),
+                                    "ejecuciones": ejecuciones(d)})
+        if u.path == "/api/sit/ejecuciones":
+            return self._send(200, ejecuciones(flow_dir(q.get("stream", ""), q.get("flow", ""))))
         if u.path == "/api/runs":
             return self._send(200, list_runs())
         m = re.match(r"^/api/runs/([^/]+)$", u.path)
@@ -557,12 +605,14 @@ class Handler(BaseHTTPRequestHandler):
                     if re.match(r"^[0-9A-Z]{3,4}$", movs.get(e["clave"], "")):
                         e = {**e, "mov": movs[e["clave"]]}   # el tipo que se ve en pantalla, sin confirmarlo
                     sel.append(e)
-            backend = engine.crear_backend("chequeo")      # SAP real (solo lectura) si el modo local lo indica
-            try:
-                return self._send(200, chequeo.chequear(sel, backend, cantidad, load_req(d), load_defaults(d), modo))
-            finally:
-                if hasattr(backend, "cerrar"):
-                    backend.cerrar()
+            def trabajo():
+                backend = engine.crear_backend("chequeo")      # SAP real (solo lectura) si el modo local lo indica
+                try:
+                    return chequeo.chequear(sel, backend, cantidad, load_req(d), load_defaults(d), modo)
+                finally:
+                    if hasattr(backend, "cerrar"):
+                        backend.cerrar()
+            return self._send(200, en_sap(trabajo))
         if u.path == "/api/sit/preparar":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             claves = [str(c) for c in data.get("claves", [])]
@@ -572,7 +622,11 @@ class Handler(BaseHTTPRequestHandler):
                 cantidad = float(str(data.get("cantidad", 1)).replace(",", "."))
             except ValueError:
                 raise ValueError("Cantidad no válida")
-            return self._send(200, {"documentos": preparar_real(d, claves, cantidad), "maximo": MAX_DOCS_REAL})
+            docs = en_sap(preparar_real, d, claves, cantidad)
+            for f in docs:
+                if f["ok"]:
+                    _PREPARADOS[f["clave"]] = {"lote": f["lote"], "ts": time.time()}
+            return self._send(200, {"documentos": docs, "maximo": MAX_DOCS_REAL})
         if u.path == "/api/sit/contabilizar":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             if json.loads((d / "flow.json").read_text(encoding="utf-8")).get("modo") == "sto":
@@ -587,7 +641,11 @@ class Handler(BaseHTTPRequestHandler):
                 cantidad = float(str(data.get("cantidad", 1)).replace(",", "."))
             except ValueError:
                 raise ValueError("Cantidad no válida")
-            prep = preparar_real(d, claves, cantidad)          # se recalcula todo: si algo cambió desde que el usuario lo vio, la huella ya no coincide
+            vigentes = {c: _PREPARADOS[c]["lote"] for c in claves if c in _PREPARADOS and time.time() - _PREPARADOS[c]["ts"] < PREPARADO_TTL}
+            if len(vigentes) != len(claves):
+                raise ValueError("Los datos se prepararon hace más de %d minutos o no se prepararon: pulsa de nuevo «Contabilizar en SAP…»." % (PREPARADO_TTL // 60))
+            # se recalcula todo con los datos actuales (sin volver a leer SAP): si algo cambió desde que el usuario lo vio, la huella ya no coincide
+            prep = preparar_real(d, claves, cantidad, vigentes)
             for f in prep:
                 if not f["ok"]:
                     raise ValueError("%s no se puede contabilizar: %s" % (f["jira_id"], f["problema"]))

@@ -30,9 +30,23 @@ class MigoError(sap_mb52.SapError):
     pass
 
 
+def normalizar_cantidad(c):
+    """Cantidad canónica: '92.0' -> '92', '0,5' -> '0.5', '1.000,500' -> '1000.5'. (Con punto como separador decimal; SAP la recibe con coma.)"""
+    t = str(c).strip()
+    if "," in t:                                   # formato SAP: punto de miles y coma decimal
+        t = t.replace(".", "").replace(",", ".")
+    v = float(t)
+    return str(int(v)) if v == int(v) else ("%.3f" % v).rstrip("0").rstrip(".")
+
+
+def cantidad_sap(c):
+    """Cantidad en el formato de números del usuario de SAP (coma decimal, sin separador de miles): '92', '0,5'."""
+    return normalizar_cantidad(c).replace(".", ",")
+
+
 def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino=""):
     """Código que identifica los datos exactos. Cambia si cambia cualquiera de ellos."""
-    txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, cantidad, motivo))
+    txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, normalizar_cantidad(cantidad), motivo))
     if almacen_destino:
         txt += "|" + str(almacen_destino).strip().upper()
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()[:8].upper()
@@ -232,7 +246,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
                 u = _buscar(usr(), "GuiCTextField", "GODYNPRO-UMCHA") or _buscar(usr(), "GuiTextField", "GODYNPRO-UMCHA")
                 if u is not None:
                     u.text = str(lote)
-        campo("GODYNPRO-ERFMG").text = str(cantidad)                                        # cantidad
+        campo("GODYNPRO-ERFMG").text = cantidad_sap(cantidad)                               # cantidad (formato de números de SAP)
         intro("al introducir cantidad y lote")
         if motivo:                                                                          # motivo del movimiento: pestaña «Where»
             t = _buscar(usr(), "GuiTab", "tabpOK_GOITEM_DESTINAT.")
@@ -303,7 +317,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
 
 def stock_lote(ses, material, centro, almacen, lote):
     """Stock del lote según MB52 (solo lectura): libre, bloqueado, calidad. Si no hay lotes, la suma del material."""
-    r = sap_mb52.consultar(ses, material, centro, almacen, lotes=True, especiales=False)
+    r = sap_mb52.consultar(ses, material, centro, almacen, lotes=True, especiales=False, columnas=sap_mb52.COLUMNAS_STOCK)
 
     def num(v):
         t = str(v).strip().replace(".", "").replace(",", ".")
