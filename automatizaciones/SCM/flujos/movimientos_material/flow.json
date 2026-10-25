@@ -1,0 +1,10 @@
+{
+  "nombre": "Movimientos de material",
+  "descripcion": "Movimientos de material sin documento previo (traslados, entradas/salidas varias) vía MB52 + MIGO.",
+  "palabras_clave": ["movimiento", "movimientos", "material", "migo", "mb52", "traslado", "stock", "311", "301"],
+  "reglas": {
+    "estrategia_lote": "FEFO_FIFO",
+    "stock_insuficiente": "PARCIAL",
+    "entorno": "SANDBOX_QAS"
+  }
+}

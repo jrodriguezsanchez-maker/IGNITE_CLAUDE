@@ -1,0 +1,127 @@
+"""Motor del flujo "Movimientos de material".
+
+SapBackend es la interfaz que implementará el enganche a SAP GUI (fase posterior).
+MockSap simula stock de forma determinista: NO toca SAP. Todo resultado es simulado.
+"""
+import hashlib
+import re
+
+ALIAS = {
+    "tipo_mov": ["tipo movimiento", "tipo de movimiento", "clase de movimiento", "tipomov", "mvt", "bwart", "movimiento"],
+    "material": ["material", "matnr", "n material", "numero de material"],
+    "centro": ["centro", "werks", "planta"],
+    "alm_origen": ["almacen origen", "almacén origen", "almacen", "almacén", "lgort", "alm origen"],
+    "centro_destino": ["centro destino", "centro receptor"],
+    "alm_destino": ["almacen destino", "almacén destino", "alm destino"],
+    "cantidad": ["cantidad", "menge", "qty"],
+    "um": ["um", "unidad", "unidad de medida", "meins"],
+    "lote": ["lote", "charg", "batch"],
+}
+REQUIRED = ["tipo_mov", "material", "centro", "alm_origen", "cantidad"]
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", str(s).strip().lower())
+
+
+def map_columns(headers):
+    mapping = {}
+    for key, aliases in ALIAS.items():
+        for h in headers:
+            if _norm(h) in [_norm(a) for a in aliases]:
+                mapping[key] = h
+                break
+    missing = [k for k in REQUIRED if k not in mapping]
+    return mapping, missing
+
+
+class SapBackend:
+    simulado = False
+
+    def mb52(self, material, centro, almacen):
+        raise NotImplementedError
+
+    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino):
+        raise NotImplementedError
+
+
+class MockSap(SapBackend):
+    simulado = True
+
+    def _h(self, *parts):
+        return int(hashlib.sha256("|".join(map(str, parts)).encode()).hexdigest(), 16)
+
+    def mb52(self, material, centro, almacen):
+        h = self._h(material, centro, almacen)
+        if h % 5 == 0:
+            return {"lotes_activo": False, "lineas": []}
+        if h % 2 == 0:
+            return {"lotes_activo": False, "lineas": [{"lote": "", "qty": 10 + h % 90, "caducidad": "", "entrada": ""}]}
+        n = 1 + h % 3
+        lineas = [{"lote": "L%07d" % ((h >> (i * 4)) % 10**7), "qty": 5 + (h >> (i * 3)) % 40,
+                   "caducidad": "2027-%02d-15" % (1 + (h >> i) % 12) if h % 3 == 0 else "",
+                   "entrada": "2026-%02d-01" % (1 + (h >> (i + 2)) % 12)} for i in range(n)]
+        return {"lotes_activo": True, "lineas": lineas}
+
+    def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino):
+        return "SIM-%010d" % (self._h(tipo_mov, material, lote, cantidad) % 10**10)
+
+
+def _num(v):
+    return float(str(v).replace(",", "."))
+
+
+def _orden(l):
+    # FEFO: caducidad asc (los que no caducan al final); desempate FIFO por fecha de entrada
+    return (l["caducidad"] or "9999-99-99", l["entrada"] or "9999-99-99")
+
+
+def run(headers, rows, backend, log):
+    mapping, missing = map_columns(headers)
+    if missing:
+        log("ERROR", "Faltan columnas obligatorias: %s" % ", ".join(missing))
+        return [], {"error": "columnas"}
+
+    def g(r, k):
+        return str(r.get(mapping.get(k, ""), "")).strip()
+
+    results, resumen = [], {"OK": 0, "PARCIAL": 0, "SIN_STOCK": 0, "ERROR": 0}
+    for i, r in enumerate(rows, start=2):
+        ref = "fila %d" % i
+        res = {"fila": i, "tipo_mov": g(r, "tipo_mov"), "material": g(r, "material"), "centro": g(r, "centro"),
+               "almacen": g(r, "alm_origen"), "pedida": g(r, "cantidad"), "movida": 0, "estado": "", "detalle": "", "documentos": []}
+        try:
+            pedida = _num(res["pedida"])
+            if pedida <= 0 or not res["material"]:
+                raise ValueError("Material o cantidad no válido")
+            stock = backend.mb52(res["material"], res["centro"], res["almacen"])
+            lineas = [l for l in stock["lineas"] if l["qty"] > 0]
+            if g(r, "lote"):
+                lineas = [l for l in lineas if l["lote"] == g(r, "lote")]
+            disponible = sum(l["qty"] for l in lineas)
+            log("INFO", "%s MB52 %s/%s/%s: stock %s, lotes=%s" % (ref, res["material"], res["centro"], res["almacen"], disponible, stock["lotes_activo"]))
+            if disponible <= 0:
+                res["estado"], res["detalle"] = "SIN_STOCK", "Sin stock libre en origen"
+            else:
+                a_mover = min(pedida, disponible)
+                pendiente = a_mover
+                for l in sorted(lineas, key=_orden):
+                    if pendiente <= 0:
+                        break
+                    q = min(pendiente, l["qty"])
+                    doc = backend.migo(res["tipo_mov"], res["material"], res["centro"], res["almacen"], l["lote"], q, g(r, "um"),
+                                       (g(r, "centro_destino"), g(r, "alm_destino")))
+                    res["documentos"].append({"doc": doc, "lote": l["lote"], "cantidad": q})
+                    pendiente -= q
+                res["movida"] = a_mover
+                if a_mover < pedida:
+                    res["estado"] = "PARCIAL"
+                    res["detalle"] = "Movido %s de %s (faltan %s)" % (a_mover, pedida, pedida - a_mover)
+                else:
+                    res["estado"] = "OK"
+        except Exception as e:  # una fila fallida no detiene el resto
+            res["estado"], res["detalle"] = "ERROR", str(e)
+        resumen[res["estado"]] += 1
+        log("INFO" if res["estado"] == "OK" else "WARN", "%s -> %s %s" % (ref, res["estado"], res["detalle"]))
+        results.append(res)
+    return results, resumen
