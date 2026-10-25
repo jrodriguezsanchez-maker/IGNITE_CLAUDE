@@ -2,11 +2,13 @@
 
 Uso:  python sap_migo_prueba.py comprobar - 344|311
       python sap_migo_prueba.py contabilizar <huella> 344
-Datos fijos de esta prueba (confirmados por el usuario): 344 · material 108210 · centro L056 · almacén 1000 · lote 73994721 · 1 KG.
+Datos de la prueba: los confirmados por el usuario, en data/pruebas_migo_local.json (local, fuera de git).
 Muestra el stock del lote (MB52) antes y, al contabilizar, también después. Salvar la salida a un fichero; no cortarla con tuberías.
 """
 import faulthandler
+import json
 import sys
+from pathlib import Path
 
 import sap_backend
 import sap_migo
@@ -14,12 +16,16 @@ import sap_mb52
 
 faulthandler.dump_traceback_later(240, exit=True)
 
-DATASETS = {
-    # 344: confirmado por el usuario (0046 = Blocked Temporarily)
-    "344": dict(mov="344", material="108210", centro="L056", almacen="1000", lote="73994721", cantidad="1", um="KG", motivo="0046"),
-    # 311: traslado entre almacenes (solo para validar con el Check; aún no se contabiliza)
-    "311": dict(mov="311", material="531634", centro="L056", almacen="1600", lote="9999", cantidad="1", um="", motivo="", almacen_destino="1000"),
-}
+def _cargar_datasets():
+    """Los datos de prueba (material, lote, centro…) son datos de cliente: viven en data/pruebas_migo_local.json, fuera de git.
+    Formato: {"344": {"mov": "344", "material": "...", "centro": "...", "almacen": "...", "lote": "...", "cantidad": "1", "um": "KG", "motivo": "0046"}, ...}"""
+    ruta = Path(__file__).parent / "data" / "pruebas_migo_local.json"
+    if not ruta.exists():
+        sys.exit("Falta %s (datos de prueba locales, no se suben a git)." % ruta)
+    return json.loads(ruta.read_text(encoding="utf-8"))
+
+
+DATASETS = _cargar_datasets()
 DATOS = DATASETS[sys.argv[3] if len(sys.argv) > 3 else "344"]
 
 

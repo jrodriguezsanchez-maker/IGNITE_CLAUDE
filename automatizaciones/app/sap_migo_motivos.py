@@ -4,6 +4,8 @@ Rellena la MIGO como en la prueba (datos confirmados), pulsa Check, cierra el re
 «motivo del movimiento», lee la lista, la cierra (Cancel) y sale de MIGO descartando los datos. Salvar la salida a un fichero.
 """
 import faulthandler
+from pathlib import Path
+import json
 import sys
 
 import sap_backend
@@ -12,7 +14,7 @@ import sap_migo
 from sap_migo import _buscar, _esperar, _texto_ventana
 
 faulthandler.dump_traceback_later(240, exit=True)
-D = dict(mov="344", material="108210", centro="L056", almacen="1000", lote="73994721", cantidad="1")
+D = json.loads((Path(__file__).parent / "data" / "pruebas_migo_local.json").read_text(encoding="utf-8"))["344"]   # datos locales, fuera de git
 
 
 def main():

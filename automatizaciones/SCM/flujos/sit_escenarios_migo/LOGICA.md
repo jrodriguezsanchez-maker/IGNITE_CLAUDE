@@ -73,7 +73,7 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
 - QS4 exige el **motivo del movimiento** en el 344 (error del Check «Enter Reason for Movement» si falta). Va en la pestaña «Where» de MIGO (`GOITEM-GRUND`).
   En la pantalla es un desplegable con los motivos válidos de cada movimiento (lista facilitada por el usuario, guardada en `data/motivos_movimiento.json`, fuera de git).
 - Lote: campo `GODYNPRO-CHARG` de la pestaña «Transfer Posting». El registro de mensajes del Check («Display logs») se lee: si tiene errores se aborta; si no, se cierra con Continue.
-- Probado (Check, sin contabilizar): 344 · 108210 · L056/1000 · lote 73994721 · 1 KG · motivo 0046 → «Document is O.K.».
+- Probado (Check, sin contabilizar): 344 · 1 KG · motivo 0046 (datos concretos en local, no versionados) → «Document is O.K.».
 - Verificación posterior prevista: anotar el nº de documento de material, leerlo (MB51/MB03), comprobar movimiento, cantidad, lote y stock con MB52, y de ahí obtener los apuntes FI, CO y ML.
 
 ## Contabilización real desde el HTML (botón «Contabilizar en SAP…»)
