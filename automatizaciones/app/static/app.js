@@ -592,6 +592,7 @@ async function loadModo() {
     $("modoSel").value = m.modo;
     const b = $("badge");
     b.classList.toggle("sap", modoSap);
+    $("btnChk").textContent = modoSap ? "Chequear datos (SAP real)" : "Chequear datos (simulado)";
     b.textContent = modoSap ? `CHEQUEO CON SAP REAL (${m.sistemas.join(", ")}) · solo lectura · el lanzamiento sigue simulado` : "MODO SIMULADO · sin conexión a SAP";
   } catch (e) { /* servidor antiguo sin /api/modo: se queda en simulado */ }
 }
@@ -603,8 +604,20 @@ $("modoSel").addEventListener("change", async () => {
     clear($("chkOut"));
     await loadModo();
     renderSit();
+    if (modoSap) probarSap();
   } catch (e) { note($("sitOut"), e.message, true); await loadModo(); }
 });
+async function probarSap() {
+  const s = $("sapEstado");
+  s.style.color = "#ccd";
+  s.textContent = "comprobando…";
+  try {
+    const r = await api("/api/sap/estado");
+    s.textContent = (r.ok ? "✔ " : "✖ ") + r.mensaje;
+    s.style.color = r.ok ? "#9be7b0" : "#ffb4a8";
+  } catch (e) { s.textContent = "✖ " + e.message; s.style.color = "#ffb4a8"; }
+}
+$("btnSap").addEventListener("click", probarSap);
 loadModo();
 
 loadTree().then((t) => {

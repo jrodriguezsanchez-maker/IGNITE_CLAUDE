@@ -56,3 +56,6 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
   desde el stock libre del primer lote. Se aborta si la sesión no es de un sistema/mandante permitido, si SAP no está en la pantalla inicial o si aparece una ventana emergente.
 - Aún no implementado con SAP real: registro info (ME13), almacenes WM (LS24), caducidad/fecha de entrada del lote (los lotes se ordenan por número de lote)
   y la **contabilización**: el lanzamiento sigue siendo simulado. Los escenarios que el chequeo dio sin stock, sin registro info o con error de SAP se excluyen del lanzamiento.
+- Botón **Probar conexión SAP** (cabecera, solo lectura): indica si hay sesión en un sistema permitido, cuántas hay, cuántas libres y si el scripting responde.
+- Sesiones: el programa usa una sesión **libre** (pantalla inicial, sin ventanas). Si todas están ocupadas **abre una sesión nueva**, la usa y la cierra al terminar;
+  nunca cierra ni toca sesiones del usuario. Cada vez que el programa se engancha, SAP muestra el aviso de «un script se engancha» y lo acepta el usuario.

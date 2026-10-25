@@ -271,6 +271,9 @@ class Handler(BaseHTTPRequestHandler):
             headers, rows = read_xlsx(d / "data" / name)
             mapping, missing = engine.map_columns(headers)
             return self._send(200, {"cabeceras": headers, "filas": rows[:50], "total": len(rows), "faltan": missing})
+        if u.path == "/api/sap/estado":
+            import sap_backend
+            return self._send(200, sap_backend.estado())
         if u.path == "/api/modo":
             import sap_backend
             cfg = sap_backend.leer_config()

@@ -28,6 +28,21 @@ def guardar_modo(modo):
     return cfg
 
 
+def estado():
+    """Diagnóstico de solo lectura de la conexión (botón «Probar conexión SAP»)."""
+    cfg = leer_config()
+    try:
+        import pythoncom
+        import sap_mb52
+    except ImportError:
+        return {"ok": False, "mensaje": "Falta pywin32 (python -m pip install --user pywin32)."}
+    pythoncom.CoInitialize()
+    try:
+        return sap_mb52.estado(cfg.get("sistemas_permitidos") or [])
+    finally:
+        pythoncom.CoUninitialize()
+
+
 def numero(txt):
     """Formato numérico de SAP del usuario: punto de miles, coma decimal y signo detrás ('1.234,5-')."""
     t = str(txt).strip().replace(" ", "")
@@ -56,6 +71,7 @@ class SapGuiBackend(engine.SapBackend):
         self._mb52 = sap_mb52
         pythoncom.CoInitialize()
         self.ses = self.sid = self.mandante = None
+        self._creada = False
         permitidos = cfg.get("sistemas_permitidos") or []
         if not permitidos:
             self.cerrar()
@@ -63,14 +79,16 @@ class SapGuiBackend(engine.SapBackend):
         errores = []
         for p in permitidos:
             try:
-                ses = sap_mb52.sesion(p["sid"])
+                ses, creada = sap_mb52.sesion(p["sid"], crear=True)   # sesión libre o, si no hay, una nueva
             except sap_mb52.SapError as e:
                 errores.append(str(e))
                 continue
             if str(ses.Info.Client) != str(p["mandante"]):
+                if creada:
+                    sap_mb52.cerrar_sesion(ses)
                 errores.append("La sesión de %s es de otro mandante: no está permitido." % p["sid"])
                 continue
-            self.ses, self.sid, self.mandante = ses, p["sid"], p["mandante"]
+            self.ses, self.sid, self.mandante, self._creada = ses, p["sid"], p["mandante"], creada
             break
         if self.ses is None:
             self.cerrar()
@@ -83,6 +101,9 @@ class SapGuiBackend(engine.SapBackend):
         return {"sistema": self.sid, "mandante": self.mandante}
 
     def cerrar(self):
+        if getattr(self, "_creada", False) and self.ses is not None:
+            self._mb52.cerrar_sesion(self.ses)      # solo la sesión que abrió el programa
+            self._creada = False
         try:
             self._com.CoUninitialize()
         except Exception:

@@ -30,22 +30,117 @@ def _attr(o, nombre, defecto=""):
         return defecto
 
 
-def sesion(sid):
+def _engine():
     if win32com is None:
         raise SapError("Falta pywin32: python -m pip install --user pywin32")
     try:
-        engine = win32com.client.GetObject("SAPGUI").GetScriptingEngine
+        return win32com.client.GetObject("SAPGUI").GetScriptingEngine
     except pythoncom.com_error:
         raise SapError("No se puede enganchar a SAP GUI (¿SAP Logon cerrado o scripting desactivado?)")
-    ses = None
+
+
+def _sesiones(engine, sid):
+    res = []
     for i in range(engine.Children.Count):
         con = engine.Children.Item(i)
         for j in range(con.Children.Count):
-            if str(con.Children.Item(j).Info.SystemName).upper() == sid.upper():
-                ses = con.Children.Item(j)
-    if ses is None:
+            s = con.Children.Item(j)
+            if str(s.Info.SystemName).upper() == str(sid).upper():
+                res.append((con, s))
+    return res
+
+
+def _libre(s):
+    """Sesión libre: en la pantalla inicial y sin ventanas emergentes."""
+    return str(s.Info.Transaction) == "SESSION_MANAGER" and s.Children.Count == 1
+
+
+def _crear_sesion(con, base):
+    """Abre una sesión nueva (otro 'modo') en la misma conexión y la devuelve."""
+    antes = {con.Children.Item(k).Id for k in range(con.Children.Count)}
+    base.CreateSession()
+    t0 = time.time()
+    while time.time() - t0 < 20:
+        time.sleep(0.5)
+        for k in range(con.Children.Count):
+            n = con.Children.Item(k)
+            if n.Id not in antes:
+                t1 = time.time()
+                while n.Busy and time.time() - t1 < 10:
+                    time.sleep(0.2)
+                return n
+    raise SapError("SAP no abrió la sesión nueva a tiempo.")
+
+
+def sesion(sid, crear=False):
+    """Devuelve (sesion, creada). Usa una sesión LIBRE para no interrumpir el trabajo del usuario en otras.
+    Si no hay ninguna libre y crear=True, abre una nueva (que luego hay que cerrar con cerrar_sesion)."""
+    cands = _sesiones(_engine(), sid)
+    if not cands:
         raise SapError("No hay ninguna sesión abierta en el sistema %s." % sid)
-    return ses
+    for con, s in cands:
+        if _libre(s):
+            return s, False
+    if not crear:
+        raise SapError("Ninguna de las %d sesión(es) de %s está libre. Deja una en la pantalla inicial (SAP Easy Access), sin ventanas emergentes." % (len(cands), sid))
+    for con, base in cands:
+        if base.Children.Count > 1:
+            continue                      # esa sesión tiene una ventana emergente
+        try:
+            return _crear_sesion(con, base), True
+        except pythoncom.com_error:
+            continue
+    raise SapError("No hay sesión libre y no se pudo abrir una nueva (¿límite de sesiones o ventanas emergentes abiertas?). Cierra alguna sesión de SAP.")
+
+
+def cerrar_sesion(ses):
+    """Cierra una sesión que abrió el programa. Nunca se usa con sesiones del usuario."""
+    try:
+        ses.Parent.CloseSession(ses.Id)
+    except Exception:
+        pass
+
+
+def estado(permitidos):
+    """Diagnóstico de solo lectura: ¿hay conexión con un sistema permitido? No crea ni cierra sesiones."""
+    if win32com is None:
+        return {"ok": False, "mensaje": "Falta pywin32 (python -m pip install --user pywin32)."}
+    try:
+        engine = _engine()
+    except SapError as e:
+        return {"ok": False, "mensaje": str(e)}
+    sistemas = {}
+    for i in range(engine.Children.Count):
+        con = engine.Children.Item(i)
+        for j in range(con.Children.Count):
+            s = con.Children.Item(j)
+            clave = (str(s.Info.SystemName).upper(), str(s.Info.Client))
+            d = sistemas.setdefault(clave, {"sesiones": 0, "libres": 0, "responde": None})
+            d["sesiones"] += 1
+            if _libre(s):
+                d["libres"] += 1
+                if d["responde"] is None:
+                    try:
+                        s.findById("wnd[0]")
+                        d["responde"] = True
+                    except pythoncom.com_error:
+                        d["responde"] = False
+    partes, ok = [], False
+    for p in permitidos:
+        d = sistemas.get((str(p["sid"]).upper(), str(p["mandante"])))
+        if d:
+            ok = True
+            libre = "%d libre(s)" % d["libres"] if d["libres"] else "ninguna libre: se abrirá una nueva al lanzar"
+            resp = "" if d["responde"] in (None, True) else " · el scripting NO responde (¿Basis?)"
+            partes.append("%s/%s conectado · %d sesión(es), %s%s" % (p["sid"], p["mandante"], d["sesiones"], libre, resp))
+            if d["responde"] is False:
+                ok = False
+        else:
+            partes.append("%s/%s: no hay sesión abierta" % (p["sid"], p["mandante"]))
+    otros = [k for k in sistemas if not any((str(p["sid"]).upper(), str(p["mandante"])) == k for p in permitidos)]
+    if otros:
+        partes.append("otros sistemas abiertos (se ignoran): " + ", ".join("%s/%s" % k for k in otros))
+    return {"ok": ok, "mensaje": " · ".join(partes) or "SAP GUI abierto, sin conexiones."}
 
 
 def _esperar(ses, segundos=60):
@@ -129,7 +224,12 @@ def main():
     sid, material, centro = sys.argv[1], sys.argv[2], sys.argv[3]
     almacen = sys.argv[4] if len(sys.argv) == 5 else ""
     try:
-        r = consultar(sesion(sid), material, centro, almacen)
+        ses, creada = sesion(sid, crear=True)
+        try:
+            r = consultar(ses, material, centro, almacen)
+        finally:
+            if creada:
+                cerrar_sesion(ses)
     except SapError as e:
         print("ABORTADO:", e)
         return 1
