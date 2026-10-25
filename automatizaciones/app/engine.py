@@ -66,6 +66,24 @@ class MockSap(SapBackend):
     def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino):
         return "SIM-%010d" % (self._h(tipo_mov, material, lote, cantidad) % 10**10)
 
+    # --- Apuntes derivados del documento de material (en SAP real: FB03, KE24, CKM3N) ---
+    def apuntes_fi(self, doc, material, centro, cantidad):
+        h = self._h(doc, "fi")
+        precio = 1 + h % 50
+        importe = round(float(cantidad) * precio, 2)
+        return [{"doc_fi": "SIMFI-%08d" % (h % 10**8), "pos": 1, "cuenta": "300000", "dc": "D", "importe": importe, "moneda": "EUR", "centro_coste": ""},
+                {"doc_fi": "SIMFI-%08d" % (h % 10**8), "pos": 2, "cuenta": "400000", "dc": "H", "importe": -importe, "moneda": "EUR", "centro_coste": ""}]
+
+    def apuntes_co(self, doc, material, centro, cantidad):
+        h = self._h(doc, "co")
+        return [{"objeto_co": "CC%06d" % (h % 10**6), "clase_coste": "400000", "valor": round(float(cantidad) * (1 + h % 50), 2), "moneda": "EUR"}]
+
+    def datos_ml(self, doc, material, centro, cantidad):
+        h = self._h(doc, "ml")
+        std = 1 + h % 50
+        return [{"material": material, "centro": centro, "control_precio": "S" if h % 2 else "V", "precio": std,
+                 "cantidad": cantidad, "valor": round(float(cantidad) * std, 2), "diferencia_precio": 0.0, "moneda": "EUR"}]
+
 
 def _num(v):
     return float(str(v).replace(",", "."))

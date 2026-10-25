@@ -1,0 +1,13 @@
+{
+  "nombre": "Escenarios SIT con MIGO",
+  "tipo": "sit_jira",
+  "descripcion": "Escenarios del Excel SIT (Jira) de SCM cuyo paso 1 es una MIGO; los pasos siguientes (FI, CO, ML, MM) se entregan como paquete de validación.",
+  "palabras_clave": ["sit", "escenario", "escenarios", "migo", "jira", "movimiento", "movimientos", "material", "validacion", "fi", "co", "ml"],
+  "reglas": {
+    "estrategia_lote": "FEFO_FIFO",
+    "stock_insuficiente": "PARCIAL",
+    "entorno": "SANDBOX_QAS",
+    "idoc_edi": "FUERA_DE_ALCANCE"
+  },
+  "cantidad_por_defecto": 1
+}

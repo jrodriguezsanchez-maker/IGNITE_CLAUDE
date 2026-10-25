@@ -77,6 +77,27 @@
       <div id="preview"></div>
     </section>
 
+    <section id="secSit" class="hide">
+      <h2>Escenarios SIT con MIGO en el paso 1</h2>
+      <div class="muted" style="margin-bottom:8px">Importa el Excel SIT (Jira) subido arriba. Revisa el tipo de movimiento propuesto de cada escenario, confírmalo y lanza. IDoc/EDI quedan fuera de alcance.</div>
+      <div class="row" style="margin-bottom:8px">
+        <select id="sitFile"></select><button id="btnImport">Importar escenarios</button><span id="sitInfo" class="muted"></span>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <input type="text" id="sitQ" placeholder="Buscar por JIRA ID, ID unidad, escenario…" style="flex:1;min-width:220px">
+        <select id="sitL2"></select><select id="sitEst"><option value="">Todos</option><option value="pend">Pendientes de confirmar</option><option value="ok">Confirmados</option><option value="sinprop">Sin propuesta</option><option value="doc">Requieren doc. previo</option></select>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <button class="sec" id="btnSelVis">Seleccionar visibles</button>
+        <button class="sec" id="btnSelNone">Quitar selección</button>
+        <button class="sec" id="btnConfirm">Confirmar movimiento de los seleccionados</button>
+        <button id="btnRunSit">Lanzar simulación de los seleccionados</button>
+        <span id="sitSelInfo" class="muted"></span>
+      </div>
+      <div id="sitOut"></div>
+      <div class="scroll" style="max-height:440px"><table id="sitTable"></table></div>
+    </section>
+
     <section id="secRuns">
       <h2 id="runsTitle">Ejecuciones</h2>
       <div id="runs" class="muted">Sin ejecuciones todavía.</div>
@@ -85,7 +106,8 @@
     <section id="secDetail" class="hide">
       <h2 id="detTitle"></h2>
       <div id="detSum" class="cards"></div>
-      <div class="row" style="margin-bottom:8px"><button class="sec" id="btnCsv">Descargar resultado (CSV)</button></div>
+      <div class="row" id="detTabs" style="margin-bottom:8px"></div>
+      <div class="row" style="margin-bottom:8px"><button class="sec" id="btnCsv">Descargar esta vista (CSV)</button><span class="muted" id="detNote"></span></div>
       <div class="scroll"><table id="detTable"></table></div>
       <h2 style="margin-top:14px">Log</h2>
       <div class="log" id="detLog"></div>

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "front-automatizaciones",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["automatizaciones/app/server.py"],
+      "port": 8765
+    }
+  ]
+}

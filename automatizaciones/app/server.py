@@ -14,6 +14,8 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, unquote
 
 import engine
+import sit_engine
+import sit_import
 from xlsx_reader import read_xlsx
 
 ROOT = Path(__file__).resolve().parent.parent  # .../automatizaciones
@@ -21,7 +23,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 HOST, PORT = "127.0.0.1", 8765
 MAX_UPLOAD = 20 * 1024 * 1024
 SAFE = re.compile(r"^[A-Za-z0-9_\-]+$")
-SAFE_FILE = re.compile(r"^[A-Za-z0-9_\-. ]+\.xlsx$")
+SAFE_FILE = re.compile(r"^[A-Za-z0-9_\-. ()]+\.xlsx$")
 RUN_ID = re.compile(r"^\d{8}-\d{6}-[a-f0-9]{4}$")
 LOCK = threading.Lock()
 
@@ -45,7 +47,7 @@ def tree():
             meta = json.loads((f / "flow.json").read_text(encoding="utf-8"))
             runs = list((f / "results").glob("*.json"))
             flujos.append({"id": f.name, "nombre": meta.get("nombre", f.name), "descripcion": meta.get("descripcion", ""),
-                           "reglas": meta.get("reglas", {}), "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
+                           "reglas": meta.get("reglas", {}), "tipo": meta.get("tipo", "excel_filas"), "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
         out.append({"id": s.name, "flujos": flujos})
     return out
 
@@ -89,6 +91,43 @@ def execute(stream, flow, filename, run_id):
         log("INFO", "Leídas %d filas de %s" % (len(rows), filename))
         run["filas"], run["resumen"] = engine.run(headers, rows, engine.MockSap(), log)
         run["estado"] = "ERROR" if run["resumen"].get("error") else "FINALIZADA"
+    except Exception as e:
+        log("ERROR", "Fallo en la ejecución: %s" % e)
+        run["estado"] = "ERROR"
+    run["fin"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    save()
+
+
+def catalog_path(d):
+    return d / "data" / "catalogo_escenarios.json"
+
+
+def load_catalog(d):
+    p = catalog_path(d)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+
+
+def execute_sit(stream, flow, claves, run_id):
+    d = flow_dir(stream, flow)
+    meta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
+    path = d / "results" / (run_id + ".json")
+    log_lines = []
+    run = {"id": run_id, "stream": stream, "flujo": flow, "tipo": "sit", "fichero": "%d escenario(s) SIT" % len(claves),
+           "inicio": time.strftime("%Y-%m-%d %H:%M:%S"), "simulado": True, "estado": "EN_CURSO", "resumen": {}, "log": log_lines}
+
+    def log(nivel, msg):
+        log_lines.append({"t": time.strftime("%H:%M:%S"), "nivel": nivel, "msg": msg})
+
+    def save():
+        path.write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    save()
+    try:
+        log("INFO", "Modo SIMULADO: no se conecta a SAP. IDoc/EDI fuera de alcance.")
+        sel = [e for e in load_catalog(d) if e["clave"] in set(claves)]
+        out, run["resumen"] = sit_engine.ejecutar(sel, engine.MockSap(), log, meta.get("cantidad_por_defecto", 1))
+        run.update(out)
+        run["estado"] = "FINALIZADA"
     except Exception as e:
         log("ERROR", "Fallo en la ejecución: %s" % e)
         run["estado"] = "ERROR"
@@ -186,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
             headers, rows = read_xlsx(d / "data" / name)
             mapping, missing = engine.map_columns(headers)
             return self._send(200, {"cabeceras": headers, "filas": rows[:50], "total": len(rows), "faltan": missing})
+        if u.path == "/api/sit/catalog":
+            return self._send(200, load_catalog(flow_dir(q.get("stream", ""), q.get("flow", ""))))
         if u.path == "/api/runs":
             return self._send(200, list_runs())
         m = re.match(r"^/api/runs/([^/]+)$", u.path)
@@ -225,6 +266,40 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 rid = time.strftime("%Y%m%d-%H%M%S-") + "%04x" % (time.time_ns() & 0xFFFF)
             threading.Thread(target=execute, args=(data["stream"], data["flow"], name, rid), daemon=True).start()
+            return self._send(200, {"ok": True, "id": rid})
+        if u.path == "/api/sit/import":
+            d = flow_dir(data.get("stream", ""), data.get("flow", ""))
+            name = data.get("file", "")
+            if not SAFE_FILE.match(name) or not (d / "data" / name).exists():
+                raise FileNotFoundError("Fichero no encontrado")
+            nuevo = sit_import.importar(d / "data" / name, d / "reglas_movimiento.json")
+            previo = {e["clave"]: e for e in load_catalog(d)}
+            for e in nuevo:  # conserva confirmaciones anteriores
+                o = previo.get(e["clave"])
+                if o and o.get("confirmado"):
+                    e["mov"], e["confirmado"] = o["mov"], True
+            catalog_path(d).write_text(json.dumps(nuevo, ensure_ascii=False), encoding="utf-8")
+            return self._send(200, {"ok": True, "escenarios": len(nuevo)})
+        if u.path == "/api/sit/confirm":
+            d = flow_dir(data.get("stream", ""), data.get("flow", ""))
+            cat = load_catalog(d)
+            idx = {e["clave"]: e for e in cat}
+            for it in data.get("items", []):
+                mov = str(it.get("mov", "")).strip().upper()
+                if it.get("clave") in idx and re.match(r"^[0-9A-Z]{3}$", mov):
+                    idx[it["clave"]]["mov"], idx[it["clave"]]["confirmado"] = mov, True
+            catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
+            return self._send(200, {"ok": True, "confirmados": sum(1 for e in cat if e["confirmado"])})
+        if u.path == "/api/sit/run":
+            d = flow_dir(data.get("stream", ""), data.get("flow", ""))
+            claves = [str(c) for c in data.get("claves", [])]
+            idx = {e["clave"]: e for e in load_catalog(d)}
+            sin = [c for c in claves if c not in idx or not idx[c]["confirmado"]]
+            if not claves or sin:
+                raise ValueError("Hay escenarios sin confirmar el tipo de movimiento: %d" % len(sin) if claves else "No hay escenarios seleccionados")
+            with LOCK:
+                rid = time.strftime("%Y%m%d-%H%M%S-") + "%04x" % (time.time_ns() & 0xFFFF)
+            threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid), daemon=True).start()
             return self._send(200, {"ok": True, "id": rid})
         if u.path == "/api/nl":
             return self._send(200, interpret(str(data.get("text", ""))[:500]))

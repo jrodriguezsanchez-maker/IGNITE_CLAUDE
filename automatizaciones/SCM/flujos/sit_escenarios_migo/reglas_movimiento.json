@@ -1,0 +1,20 @@
+{
+  "_nota": "Reglas genéricas (sin datos de cliente) para PROPONER el tipo de movimiento. Se aplican por orden sobre descripción y datos del paso 1. El usuario confirma siempre antes de lanzar. Validar con consultor MM.",
+  "reglas": [
+    {"patron": "unblock|block to av|from block|bloque.* a disp|desbloque", "mov": "343", "nota": "Bloqueado a libre uso"},
+    {"patron": "avaliable to block|available to block|to block|block the|bloquear", "mov": "344", "nota": "Libre uso a bloqueado"},
+    {"patron": "to quality|quality control|calidad", "mov": "321", "nota": "Libre uso a control de calidad"},
+    {"patron": "from quality|quality to", "mov": "322", "nota": "Calidad a libre uso"},
+    {"patron": "null the good|cancel.*good|reverse|anula", "mov": "262", "nota": "Anulación de salida (si es entrada: 102)", "requiere_doc": true},
+    {"patron": "scrap|damaged|unusable|desguace|merma", "mov": "551", "nota": "Salida por desguace"},
+    {"patron": "inventory adjustment \\(-\\)|difference|inventario|diferencia", "mov": "702", "nota": "Diferencia de inventario (-); 701 si es (+)"},
+    {"patron": "between plants|other plant|plant to plant|entre centros|stock obsel", "mov": "301", "nota": "Traslado centro a centro en un paso (también 303/305)"},
+    {"patron": "good(s)? issue.*(cost collector|production order|work order|order)|goods issue against|gi against", "mov": "261", "nota": "Consumo contra orden", "requiere_doc": true},
+    {"patron": "production reception|notification of production|against the cost collector|production order", "mov": "101", "nota": "Entrada de producción contra orden", "requiere_doc": true},
+    {"patron": "gr against|goods receipt.*(po|purchase)|against the .*po|purchase order|\\bpo\\b|\\bsto\\b", "mov": "101", "nota": "Entrada contra pedido", "requiere_doc": true},
+    {"patron": "internal lo|storage location|stock.?loc|movement to storage|from im to|silo|staging|transfer posting|transfer between", "mov": "311", "nota": "Traslado entre almacenes en un centro"},
+    {"patron": "good receipt|goods receipt|\\bgr\\b|reception", "mov": "501", "nota": "Entrada sin pedido (si hay PO: 101)"},
+    {"patron": "good(s)? issue|\\bgi\\b", "mov": "201", "nota": "Salida a centro de coste"}
+  ],
+  "marcadores_documento_previo": ["po created", "purchase order", "\\bpo\\b", "\\bsto\\b", "production order", "work order", "cost collector", "order number"]
+}
