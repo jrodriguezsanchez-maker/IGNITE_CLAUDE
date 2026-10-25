@@ -12,7 +12,8 @@
     "orden": "Orden",
     "po": "Pedido (PO)",
     "motivo": "Motivo del movimiento",
-    "doc_ref": "Doc. de material de referencia"
+    "doc_ref": "Doc. de material de referencia",
+    "lote": "Lote"
   },
   "generico": {
     "nombre": "Movimiento sin definir",

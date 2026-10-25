@@ -51,3 +51,6 @@ No hay derivación de centro destino = origen (en un STO son distintos). Lo que 
   nombre de las demás conexiones abiertas (p. ej. producción) y **no accede a sus sesiones**, ni siquiera para leerlas.
 - `pywin32`: si no está en el Python del usuario se usa la copia de `automatizaciones/vendor/pywin32` (fuera de git). Hace falta porque la app de Claude es una aplicación
   empaquetada de Windows y un `pip install --user` hecho desde ella queda en una copia privada de AppData que no ven los procesos lanzados desde el Explorador.
+- **Lote:** el chequeo devuelve los lotes en orden FEFO/FIFO y cómo se cubriría la cantidad (p. ej. «A × 600 + B × 400»). En el detalle del escenario hay un campo
+  **Lote (opcional)** rellenado con esa propuesta y **editable**: lo que escribas manda (si el material es único; se guarda al salir del campo). Con SAP real se usa ese
+  lote; con el motor simulado se ignora para no mezclar lotes reales con stock inventado. El lote también aparece en la tabla y en el plan «Qué haría en SAP».

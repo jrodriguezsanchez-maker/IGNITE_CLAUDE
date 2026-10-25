@@ -17,7 +17,8 @@
     "wm": "¿Almacén suministrador WM? (S/N)",
     "vendor": "Vendor (del centro suministrador)",
     "org_ventas": "Org. ventas",
-    "punto_expedicion": "Punto de expedición (VL10B)"
+    "punto_expedicion": "Punto de expedición (VL10B)",
+    "lote": "Lote"
   },
   "generico": {
     "nombre": "Tipo de documento sin definir",

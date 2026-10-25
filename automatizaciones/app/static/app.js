@@ -8,7 +8,8 @@ let files = [];
 let catalog = [], cmeta = {}; // escenarios SIT y datos de la importación
 let reqCfg = null, defaults = {}, qty0 = 1;
 let modoSap = false;
-const chk = {};           // clave -> estado del último chequeo
+const chk = {};
+const chkDet = {};        // clave -> detalle del último chequeo (lotes, stock…)           // clave -> estado del último chequeo
 let cantidadesOk = {};    // clave -> {material: cantidad} propuestas aceptadas
 const picked = new Set();
 const movIn = {};             // clave -> movimiento tecleado
@@ -256,6 +257,13 @@ function resolve(e, mov) {
   return { req, vals, src, faltan: req.requiere.filter((f) => !vals[f]) };
 }
 const lab = (f) => reqCfg.campos[f] || f;
+function lotesChequeo(e) {
+  const d = chkDet[e.clave];
+  if (!d || !d.items) return "";
+  return d.items.filter((it) => it.asignacion && it.asignacion.length)
+    .map((it) => (d.items.length > 1 ? it.material + ": " : "") + it.asignacion.map((a) => `${a.lote} × ${a.cantidad}`).join(" + ")).join(" · ");
+}
+const lotesSugeridos = (e) => { const d = chkDet[e.clave]; return d && d.items ? [...new Set(d.items.flatMap((it) => (it.asignacion || []).map((a) => a.lote)))].join(", ") : ""; };
 const movOf = (e) => movIn[e.clave] ?? (e.confirmado ? e.mov : (e.mov_ambiguo ? "" : (e.movs_candidatos[0] || "")));
 const movOk = (m) => /^[0-9A-Z]{3,4}$/.test(m);
 
@@ -284,7 +292,7 @@ function datosChip(e) {
 
 async function guardar(e, inputs, comoCentro) {
   const valores = {};
-  for (const [f, inp] of Object.entries(inputs)) if (inp.value.trim()) valores[f] = inp.value.trim();
+  for (const [f, inp] of Object.entries(inputs)) if (inp.value.trim() && (f !== "lote" || inp.dataset.dirty)) valores[f] = inp.value.trim();
   try {
     const body = { stream: sel.stream, flow: sel.flow };
     if (comoCentro) { const c = e.interpretado.centro; if (!c) throw new Error("El escenario no tiene centro"); delete valores.cantidad; delete valores.material;
@@ -294,7 +302,7 @@ async function guardar(e, inputs, comoCentro) {
     const keep = new Map(catalog.map((x) => [x.clave, x]));
     catalog = r.escenarios.map((x) => ({ ...x, confirmado: keep.get(x.clave)?.confirmado ?? x.confirmado, mov: keep.get(x.clave)?.mov ?? x.mov }));
     defaults = r.defaults;
-    for (const k of Object.keys(chk)) delete chk[k];
+    for (const k of Object.keys(chk)) { delete chk[k]; delete chkDet[k]; }
     note($("sitOut"), comoCentro ? `Guardado como valor por defecto del centro ${e.interpretado.centro}.` : `Datos guardados para ${e.fila1["JIRA ID"]}.`);
     renderSit();
   } catch (err) { note($("sitOut"), err.message, true); }
@@ -318,7 +326,7 @@ function planSap(e, r, mov) {
       paso(1, "ME13", "Comprobar el registro info de cada material", [["Materiales", val("material")], ["Proveedor", `vendor del centro ${val("centro") || "—"}`, "(se lee en SAP)"],
         ["Org. compras", val("org_compras")], ["Centro", val("centro")]], "Si falta alguno, se para el escenario y se avisa (darlo de alta con ME11 sería manual)."),
       paso(2, wm ? "LS24 / LX02" : "MB52", wm ? "Buscar stock libre en cuantos WM" : "Buscar stock libre", [["Centro / almacén suministrador", par("centro", "alm_origen")],
-        ["Lote", "FEFO / FIFO: el primero con stock"], ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se traslada lo disponible (parcial)."),
+        ["Lote", val("lote") || lotesChequeo(e) || "FEFO / FIFO: el primero con stock", val("lote") ? "(indicado por ti)" : lotesChequeo(e) ? "(según el chequeo)" : ""], ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se traslada lo disponible (parcial)."),
       paso(3, "ME21N", `Crear el pedido de traslado ${mov}`, [["Org. compras / grupo / sociedad", val("org_compras") && val("grupo_compras") && val("sociedad") ? `${val("org_compras")} / ${val("grupo_compras")} / ${val("sociedad")}` : null],
         ["Centro suministrador", val("centro")], ["Centro / almacén receptor", par("centro_destino", "alm_destino")], ["Posiciones", val("material") ? `${val("material")} · cantidad ${val("cantidad") || "—"} · lote del paso 2` : null]]),
       paso(4, "VL10B", "Crear la entrega de salida desde los pedidos pendientes de entrega", [["Selección", `el STO creado en el paso 3 · centro suministrador ${val("centro") || "—"}`],
@@ -327,7 +335,7 @@ function planSap(e, r, mov) {
   } else {
     const extra = r.req.requiere.filter((f) => !["centro", "alm_origen", "material", "cantidad", "centro_destino", "alm_destino"].includes(f)).map((f) => [lab(f), val(f)]);
     box.append(
-      paso(1, "MB52", "Buscar stock libre y lote", [["Centro / almacén origen", par("centro", "alm_origen")], ["Material(es)", val("material")], ["Lote", "FEFO / FIFO: el primero con stock"],
+      paso(1, "MB52", "Buscar stock libre y lote", [["Centro / almacén origen", par("centro", "alm_origen")], ["Material(es)", val("material")], ["Lote", val("lote") || lotesChequeo(e) || "FEFO / FIFO: el primero con stock", val("lote") ? "(indicado por ti)" : lotesChequeo(e) ? "(según el chequeo)" : ""],
         ["Cantidad", val("cantidad"), cant]], "Si el stock no llega, se mueve lo disponible (parcial)."),
       paso(2, "MIGO", `Contabilizar el movimiento ${mov}${r.req.nombre ? " · " + r.req.nombre : ""}`, [["Centro / almacén origen", par("centro", "alm_origen")],
         ...(r.req.requiere.includes("centro_destino") || r.req.requiere.includes("alm_destino") ? [["Centro / almacén destino", par("centro_destino", "alm_destino") || (val("alm_destino") ? `${val("centro_destino") || val("centro")} / ${val("alm_destino")}` : null)]] : []),
@@ -362,6 +370,17 @@ function detailRow(e, span) {
     inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));
     grid.append(h("span", { class: "muted" }, lab(f) + " (opcional)"), inp, h("span", { class: "muted" }, r.vals[f] ? r.src[f] : ""));
   }
+  if (reqCfg.campos.lote) {
+    const sug = lotesSugeridos(e);
+    const aport = (e.aportados || {}).lote || "";
+    const inp = h("input", { type: "text", style: "width:100%", placeholder: sug ? "" : "opcional · si lo dejas vacío se elige FEFO/FIFO" });
+    inp.value = aport || sug;
+    inp.addEventListener("input", () => { inp.dataset.dirty = "1"; });
+    inp.addEventListener("change", () => guardar(e, { lote: inp }, false));
+    inputs.lote = inp;
+    grid.append(h("span", { class: "muted" }, "Lote (opcional)"), inp,
+      h("span", { class: "muted" }, aport ? "indicado por ti" : sug ? "propuesto por el chequeo (FEFO/FIFO)" : "sin chequeo"));
+  }
   form.append(grid, h("div", { class: "muted", style: "margin-top:6px" }, "Los cambios se guardan al salir del campo o al pulsar Intro."), h("div", { class: "row", style: "margin-top:8px" },
     h("button", { onclick: () => guardar(e, inputs, false) }, "Guardar en este escenario"),
     h("button", { class: "sec", onclick: () => guardar(e, inputs, true), title: "Se aplicará a todos los escenarios de este centro que no traigan el dato" },
@@ -394,14 +413,14 @@ function renderSit() {
     const inp = h("input", { type: "text", maxlength: "4", style: "width:62px;text-align:center" });
     inp.value = movOf(e);
     inp.title = e.movs_candidatos.length ? "Propuesta: " + e.movs_candidatos.join(", ") : "Sin propuesta: indícalo tú";
-    inp.addEventListener("change", () => { movIn[e.clave] = inp.value.toUpperCase(); delete chk[e.clave]; renderSit(); });
+    inp.addEventListener("change", () => { movIn[e.clave] = inp.value.toUpperCase(); delete chk[e.clave]; delete chkDet[e.clave]; renderSit(); });
     const est = e.confirmado ? chip("CONFIRMADO", "confirmado") : (movOf(e) ? chip("PROPUESTO", "propuesto") : chip("SIN_PROPUESTA", "sin propuesta"));
     const r = resolve(e, movOf(e));
     const av = [...avisos(e).filter((a) => !a.startsWith("sin material") && !a.startsWith("sin centro")),
       r.req.desconocido ? "requisitos del movimiento sin definir" : "",
       r.req.destino_distinto && r.src.centro_destino === "= origen" ? "traslado entre centros con el mismo centro: ¿falta el centro destino?" : "", r.req.transaccion ? "no se hace con MIGO (" + r.req.transaccion + ")" : ""].filter(Boolean);
     tb.append(h("tr", {}, h("td", {}, cb), h("td", {}, tog), ...visCols.map((c) => h("td", {}, h("div", { class: "cell" }, e.fila1[c] || ""))),
-      h("td", {}, datosChip(e)), h("td", {}, inp, " ", est), h("td", {}, chk[e.clave] ? [chip(chk[e.clave], "chequeo: " + chk[e.clave].toLowerCase().replace(/_/g, " ")), " "] : "", av.join(" · "))));
+      h("td", {}, datosChip(e)), h("td", {}, inp, " ", est), h("td", {}, chk[e.clave] ? [chip(chk[e.clave], "chequeo: " + chk[e.clave].toLowerCase().replace(/_/g, " ")), " ", ((e.aportados || {}).lote || lotesChequeo(e)) ? h("span", { class: "muted" }, "lote " + ((e.aportados || {}).lote || lotesChequeo(e)) + " ") : ""] : "", av.join(" · "))));
     if (isOpen) tb.append(detailRow(e, span));
   }
   $("sitCount").textContent = `${vis.length} de ${catalog.length} escenarios visibles`;
@@ -435,7 +454,7 @@ async function chequear() {
     const movs = Object.fromEntries(items.map((e) => [e.clave, movOf(e)]));
     const r = await post("/api/sit/chequear", { stream: sel.stream, flow: sel.flow, claves: items.map((e) => e.clave), cantidad: qtyGlobal(), movs });
     clear($("sitOut"));
-    for (const f of r.filas) chk[f.clave] = f.estado;
+    for (const f of r.filas) { chk[f.clave] = f.estado; chkDet[f.clave] = f; }
     const cuenta = {};
     r.filas.forEach((f) => { cuenta[f.estado] = (cuenta[f.estado] || 0) + 1; });
     const card = h("div", { class: "prop" }, h("h3", { style: "margin-top:0" }, `Chequeo de ${r.filas.length} escenario(s) · solo lectura`),
@@ -454,7 +473,7 @@ async function chequear() {
         tb.append(h("tr", {}, h("td", {}, f.jira_id), h("td", {}, f.id_jira_unidad), h("td", {}, f.mov), h("td", {}, i === 0 ? chip(f.estado) : ""),
           h("td", {}, it ? it.material : ""),
           ...(esSto() ? [h("td", {}, it ? (it.registro_info === null ? h("span", { class: "muted" }, "no comprobado") : it.registro_info ? chip("OK", "OK") : chip("ERROR", "FALTA (ME11)")) : "")] : []),
-          h("td", {}, it ? (it.stock === null ? "—" : `${it.stock} (${it.fuente_stock})`) : ""), h("td", {}, it ? (it.lote || "—") + (it.lote ? ` · ${it.lote_stock}` : "") : ""),
+          h("td", {}, it ? (it.stock === null ? "—" : `${it.stock} (${it.fuente_stock})`) : ""), h("td", {}, it ? (it.asignacion && it.asignacion.length ? it.asignacion.map((a) => `${a.lote} × ${a.cantidad}`).join(" + ") + (it.sin_cubrir ? ` (faltan ${it.sin_cubrir})` : "") : "—") : ""),
           h("td", {}, it ? `${it.cantidad} (${it.cantidad_origen})` : ""), h("td", {}, it && it.cantidad_propuesta != null ? `${it.cantidad_propuesta} · lote ${it.lote_propuesto}` : ""),
           h("td", {}, i === 0 ? det : "")));
       });
@@ -470,7 +489,7 @@ async function chequear() {
 }
 $("btnChk").addEventListener("click", chequear);
 
-$("qty").addEventListener("change", () => { for (const k of Object.keys(chk)) delete chk[k]; cantidadesOk = {}; renderSit(); });
+$("qty").addEventListener("change", () => { for (const k of Object.keys(chk)) { delete chk[k]; delete chkDet[k]; } cantidadesOk = {}; renderSit(); });
 $("btnRunSit").addEventListener("click", async () => {
   const todos = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
   const malos = todos.filter((i) => !movOk(i.mov));
@@ -599,7 +618,7 @@ async function loadModo() {
 $("modoSel").addEventListener("change", async () => {
   try {
     await post("/api/modo", { modo: $("modoSel").value });
-    for (const k of Object.keys(chk)) delete chk[k];
+    for (const k of Object.keys(chk)) { delete chk[k]; delete chkDet[k]; }
     cantidadesOk = {};
     clear($("chkOut"));
     await loadModo();

@@ -47,7 +47,8 @@ def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults, pro
                     "Vendor": vals.get("vendor", ""), "CECO": vals.get("ceco", ""), "Orden": vals.get("orden", ""),
                     "PO": vals.get("po", ""), "Motivo": vals.get("motivo", "")}
             prop = (propuestas or {}).get(e["clave"], {}) if fuentes.get("cantidad") == "global" else {}
-            rows = [{**fila, "Material": m, "Cantidad": str(prop.get(m, qty))} for m in vals["material"]]
+            lote_sel = vals.get("lote", "") if (len(vals["material"]) == 1 and not backend.simulado and "," not in vals.get("lote", "")) else ""
+            rows = [{**fila, "Material": m, "Cantidad": str(prop.get(m, qty)), "Lote": lote_sel} for m in vals["material"]]
             res, _ = engine.run(HEAD, rows, backend, log)
             estados = [r["estado"] for r in res]
             nota = "cantidad %s (%s)" % (qty, fuentes.get("cantidad", "")) + (" · cantidad propuesta desde stock y confirmada" if prop else "")

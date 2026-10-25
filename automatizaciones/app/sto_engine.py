@@ -48,6 +48,9 @@ def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults, pro
                 for m in mats:
                     st = backend.stock_origen(m, centro, almacen, wm)
                     lineas = sorted([l for l in st["lineas"] if l["qty"] > 0], key=engine._orden)
+                    lote_sel = vals.get("lote", "") if (len(mats) == 1 and not backend.simulado and "," not in vals.get("lote", "")) else ""
+                    if lote_sel:                                       # lote fijado por el usuario
+                        lineas = [l for l in lineas if l["lote"] == lote_sel]
                     log("INFO", "%s stock %s %s/%s [%s]: %s" % (ref, m, centro, almacen, st["fuente"], sum(l["qty"] for l in lineas)))
                     pend = float(prop.get(m, qty))
                     for l in lineas:

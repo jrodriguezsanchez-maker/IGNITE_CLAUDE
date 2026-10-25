@@ -55,6 +55,17 @@ def chequear(sel, backend, cantidad_global, req_cfg, defaults, modo):
                         "lote": (lineas[0]["lote"] or "sin lote") if lineas else "", "lote_stock": lineas[0]["qty"] if lineas else 0,
                         "cantidad": qty, "cantidad_origen": fuentes.get("cantidad", ""), "registro_info": None,
                         "cantidad_propuesta": None, "lote_propuesto": ""}
+                pend = qty
+                asign = []
+                for l in lineas:                                   # lotes en orden FEFO/FIFO hasta cubrir la cantidad
+                    if pend <= 0:
+                        break
+                    q = min(pend, l["qty"])
+                    asign.append({"lote": l["lote"] or "sin lote", "cantidad": q})
+                    pend -= q
+                item["lotes"] = [{"lote": l["lote"] or "sin lote", "qty": l["qty"]} for l in lineas]
+                item["asignacion"] = asign
+                item["sin_cubrir"] = max(pend, 0)
                 if modo == "sto":
                     try:
                         item["registro_info"] = bool(backend.registro_info(m, centro, vals["org_compras"]))
