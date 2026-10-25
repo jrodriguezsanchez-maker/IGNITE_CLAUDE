@@ -42,6 +42,17 @@ def map_columns(headers):
 
 class SapBackend:
     simulado = False
+    puede_proponer_cantidad = False   # True solo con SAP conectado (lee stock real)
+
+    def proponer_cantidad(self, material, centro, almacen, wm):
+        """Con SAP: stock libre del lote elegido (FEFO/FIFO) -> {"lote": ..., "cantidad": ...}; None si no hay."""
+        return None
+
+    def stock_origen(self, material, centro, almacen, wm):
+        raise NotImplementedError
+
+    def registro_info(self, material, centro_suministrador, org_compras):
+        raise NotImplementedError
 
     def mb52(self, material, centro, almacen):
         raise NotImplementedError
@@ -164,3 +175,8 @@ def run(headers, rows, backend, log):
         log("INFO" if res["estado"] == "OK" else "WARN", "%s -> %s %s" % (ref, res["estado"], res["detalle"]))
         results.append(res)
     return results, resumen
+
+
+def crear_backend():
+    """Backend activo. Hoy simulado; con la conexión a SAP GUI devolverá el backend real."""
+    return MockSap()

@@ -164,7 +164,7 @@ def resolver(e, mov, req_cfg, defaults, cantidad_global):
             poner(f, vals["centro"], "= origen")
         elif f == "alm_destino" and req.get("alm_destino_igual_origen") and vals.get("alm_origen"):
             poner(f, vals["alm_origen"], "= origen")
-        elif not poner(f, d.get(f), "centro") and f == "cantidad":
+        elif not (poner(f, d.get(f), "centro") or poner(f, (req_cfg.get("valores_por_defecto") or {}).get(f), "por defecto")) and f == "cantidad":
             poner(f, str(cantidad_global), "global")
     faltan = [f for f in req["requiere"] if not vals.get(f)]
     return vals, fuentes, faltan, req

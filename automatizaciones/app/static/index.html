@@ -52,6 +52,7 @@
   details.cols { position:relative; } details.cols summary { cursor:pointer; padding:7px 10px; border:1px solid var(--bd); border-radius:6px; background:#fff; list-style:none; }
   details.cols .pop { position:absolute; z-index:5; background:#fff; border:1px solid var(--bd); border-radius:6px; padding:8px 12px; max-height:300px; overflow:auto; min-width:240px; box-shadow:0 4px 14px #0002; }
   details.cols label { display:block; white-space:nowrap; }
+  .chipbtn { border:0; border-radius:10px; padding:2px 12px; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; }
   pre { margin:4px 0; white-space:pre-wrap; font:12px/1.4 Consolas,monospace; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 </style>
@@ -116,11 +117,13 @@
           <span id="sitCount" class="muted"></span>
         </div>
         <div id="sitOut"></div>
+        <div id="chkOut"></div>
         <div class="scroll"><table id="sitTable"></table></div>
         <div class="bar row">
           <span id="barInfo" class="grow"></span>
           <label class="muted">Cantidad por defecto <input type="text" id="qty" style="width:64px;text-align:right"></label>
-          <button id="btnRunSit">Confirmar movimientos y lanzar</button>
+          <button class="sec" id="btnChk" title="Solo lectura: no contabiliza nada">Chequear datos</button>
+          <button id="btnRunSit">Confirmar y lanzar</button>
         </div>
       </div>
 

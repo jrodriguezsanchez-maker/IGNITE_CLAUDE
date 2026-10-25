@@ -18,7 +18,7 @@ def _traza(e):
     return {k: e.get(k, "") for k in TRAZA}
 
 
-def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults):
+def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults, propuestas=None):
     out = {"escenarios": [], "mm": [], "fi": [], "co": [], "ml": [], "pasos": []}
     resumen = {k: 0 for k in ESTADOS}
     campos = req_cfg["campos"]
@@ -46,10 +46,11 @@ def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults):
                     "UM": "", "Lote": "", "Centro destino": vals.get("centro_destino", ""), "Almacén destino": vals.get("alm_destino", ""),
                     "Vendor": vals.get("vendor", ""), "CECO": vals.get("ceco", ""), "Orden": vals.get("orden", ""),
                     "PO": vals.get("po", ""), "Motivo": vals.get("motivo", "")}
-            rows = [{**fila, "Material": m} for m in vals["material"]]
+            prop = (propuestas or {}).get(e["clave"], {}) if fuentes.get("cantidad") == "global" else {}
+            rows = [{**fila, "Material": m, "Cantidad": str(prop.get(m, qty))} for m in vals["material"]]
             res, _ = engine.run(HEAD, rows, backend, log)
             estados = [r["estado"] for r in res]
-            nota = "cantidad %s (%s)" % (qty, fuentes.get("cantidad", ""))
+            nota = "cantidad %s (%s)" % (qty, fuentes.get("cantidad", "")) + (" · cantidad propuesta desde stock y confirmada" if prop else "")
             for r in res:
                 resumen[r["estado"]] += 1
                 esc["filas"].append(r)

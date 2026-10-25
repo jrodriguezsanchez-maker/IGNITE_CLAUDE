@@ -18,7 +18,7 @@ def _si(v):
     return str(v or "").strip().upper() in ("S", "SI", "SÍ", "Y", "YES", "1")
 
 
-def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults):
+def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults, propuestas=None):
     out = {"escenarios": [], "sto": [], "entregas": [], "pasos": []}
     resumen = {k: 0 for k in ESTADOS}
     campos = req_cfg["campos"]
@@ -44,11 +44,12 @@ def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults):
                 log("WARN", "%s -> %s" % (ref, esc["detalle"]))
             else:
                 items, sin_stock, parcial = [], [], False
+                prop = (propuestas or {}).get(e["clave"], {}) if fuentes.get("cantidad") == "global" else {}
                 for m in mats:
                     st = backend.stock_origen(m, centro, almacen, wm)
                     lineas = sorted([l for l in st["lineas"] if l["qty"] > 0], key=engine._orden)
                     log("INFO", "%s stock %s %s/%s [%s]: %s" % (ref, m, centro, almacen, st["fuente"], sum(l["qty"] for l in lineas)))
-                    pend = qty
+                    pend = float(prop.get(m, qty))
                     for l in lineas:
                         if pend <= 0:
                             break
@@ -66,13 +67,14 @@ def ejecutar(catalogo_sel, backend, log, cantidad_global, req_cfg, defaults):
                     ent = backend.crear_entrega(sto, items)
                     esc["sto"], esc["entrega"] = sto, ent
                     esc["estado"] = "PARCIAL" if (sin_stock or parcial) else "OK"
-                    esc["detalle"] = "cantidad %s (%s)%s" % (qty, fuentes.get("cantidad", ""), (" · sin stock: " + ", ".join(sin_stock)) if sin_stock else "")
+                    esc["detalle"] = "cantidad %s (%s)%s%s" % (qty, fuentes.get("cantidad", ""), " · cantidad propuesta desde stock y confirmada" if prop else "",
+                                                                (" · sin stock: " + ", ".join(sin_stock)) if sin_stock else "")
                     for it in items:
                         base = {**t, "escenario": e["escenario"], "tipo": e["mov"], "centro_suministrador": centro, "alm_suministrador": almacen,
                                 "wm": "S" if wm else "N", "centro_receptor": vals["centro_destino"], "alm_receptor": vals.get("alm_destino", ""),
                                 "material": it["material"], "lote": it["lote"] or "sin lote", "cantidad": it["cantidad"]}
                         out["sto"].append({**base, "sto": sto, "org_compras": vals["org_compras"], "grupo_compras": vals["grupo_compras"],
-                                           "sociedad": vals["sociedad"], "incoterms": vals.get("incoterms", ""), "registro_info": "OK",
+                                           "sociedad": vals["sociedad"], "registro_info": "OK",
                                            "fuente_stock": it["fuente"]})
                         out["entregas"].append({**base, "entrega": ent, "sto": sto})
         resumen[esc["estado"]] += 1

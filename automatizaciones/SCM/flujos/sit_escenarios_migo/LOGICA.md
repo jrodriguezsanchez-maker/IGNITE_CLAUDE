@@ -39,3 +39,10 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
 - Cantidad: si el Excel no la indica se usa `cantidad_por_defecto` (1).
 - Escenarios sin material o centro en el Excel -> SIN_DATOS. Los que requieren PO/orden previa se avisan.
 - Los pasos MIGO posteriores al primero no se ejecutan todavía.
+
+## Chequeo previo y cantidad
+- Botón **Chequear datos** (solo lectura, no contabiliza nada): para los escenarios seleccionados comprueba datos completos, stock y lote
+  (FEFO/FIFO) en centro/almacén origen y muestra un informe por escenario y material. Estados: LISTO, AVISO, FALTAN_DATOS, SIN_STOCK.
+- En la tabla, cada escenario muestra **OK** (datos completos) o **NOK · n** (faltan n datos); al pulsarlo se abre el detalle para ver y modificar.
+- Cantidad: si no se indica (Excel, escenario o centro) se usa el valor por defecto de la pantalla. Con SAP conectado, el chequeo propone la cantidad
+  desde el stock libre del lote elegido y se usa solo si la aceptas antes de lanzar. El motor simulado no propone cantidades.

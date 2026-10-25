@@ -7,6 +7,8 @@ let sel = null;               // {stream, flow, meta}
 let files = [];
 let catalog = [], cmeta = {}; // escenarios SIT y datos de la importación
 let reqCfg = null, defaults = {}, qty0 = 1;
+const chk = {};           // clave -> estado del último chequeo
+let cantidadesOk = {};    // clave -> {material: cantidad} propuestas aceptadas
 const picked = new Set();
 const movIn = {};             // clave -> movimiento tecleado
 const open = new Set();       // filas desplegadas
@@ -24,7 +26,7 @@ function h(tag, attrs, ...kids) {
   for (const c of kids.flat()) e.append(c instanceof Node ? c : document.createTextNode(c ?? ""));
   return e;
 }
-const chip = (t, label) => h("span", { class: "chip " + t }, label ?? String(t).replace("_", " "));
+const chip = (t, label) => h("span", { class: "chip " + t }, label ?? String(t).replace(/_/g, " "));
 const clear = (e) => { while (e.firstChild) e.removeChild(e.firstChild); return e; };
 const note = (box, text, err) => clear(box).append(h("div", { class: "msg" + (err ? " err" : "") }, text));
 
@@ -248,7 +250,7 @@ function resolve(e, mov) {
     if (put(f, a[f], "aportado") || put(f, i[f], "excel")) continue;
     if (f === "centro_destino" && vals.centro && reqCfg.derivar_centro_destino !== false) put(f, vals.centro, "= origen");
     else if (f === "alm_destino" && req.alm_destino_igual_origen && vals.alm_origen) put(f, vals.alm_origen, "= origen");
-    else if (!put(f, d[f], "centro") && f === "cantidad") put(f, String(qtyGlobal()), "global");
+    else if (!(put(f, d[f], "centro") || put(f, (reqCfg.valores_por_defecto || {})[f], "por defecto")) && f === "cantidad") put(f, String(qtyGlobal()), "global");
   }
   return { req, vals, src, faltan: req.requiere.filter((f) => !vals[f]) };
 }
@@ -270,20 +272,13 @@ function visible() {
   });
 }
 
-function interpretadoCell(e) {
+function datosChip(e) {
   const r = resolve(e, movOf(e));
-  const box = h("div", { style: "min-width:210px" });
-  for (const f of r.req.requiere) {
-    const v = r.vals[f];
-    box.append(h("div", {}, h("span", { class: "muted" }, lab(f) + ": "),
-      v ? h("b", {}, Array.isArray(v) ? (v.length > 2 ? `${v[0]}, ${v[1]} (+${v.length - 2})` : v.join(", ")) : v) : chip("ERROR", "FALTA"),
-      v && r.src[f] !== "excel" ? h("span", { class: "muted" }, ` (${r.src[f]})`) : ""));
-  }
-  for (const f of r.req.opcionales || []) {
-    const v = r.vals[f];
-    if (v) box.append(h("div", { class: "muted" }, lab(f) + " (opcional): " + (Array.isArray(v) ? v.join(", ") : v)));
-  }
-  return box;
+  const ok = !r.faltan.length && !r.req.transaccion;
+  const texto = r.req.transaccion ? "NO SOPORTADO" : ok ? "OK" : `NOK · ${r.faltan.length}`;
+  const ayuda = r.req.transaccion ? r.req.nota : ok ? "Datos completos. Pulsa para ver o modificar." : "Faltan: " + r.faltan.map(lab).join(", ") + ". Pulsa para completarlos.";
+  return h("button", { class: "chipbtn " + (ok ? "OK" : "ERROR"), title: ayuda,
+    onclick: () => { open.has(e.clave) ? open.delete(e.clave) : open.add(e.clave); renderSit(); } }, texto);
 }
 
 async function guardar(e, inputs, comoCentro) {
@@ -298,6 +293,7 @@ async function guardar(e, inputs, comoCentro) {
     const keep = new Map(catalog.map((x) => [x.clave, x]));
     catalog = r.escenarios.map((x) => ({ ...x, confirmado: keep.get(x.clave)?.confirmado ?? x.confirmado, mov: keep.get(x.clave)?.mov ?? x.mov }));
     defaults = r.defaults;
+    for (const k of Object.keys(chk)) delete chk[k];
     note($("sitOut"), comoCentro ? `Guardado como valor por defecto del centro ${e.interpretado.centro}.` : `Datos guardados para ${e.fila1["JIRA ID"]}.`);
     renderSit();
   } catch (err) { note($("sitOut"), err.message, true); }
@@ -311,7 +307,7 @@ function detailRow(e, span) {
   const form = h("div", {}, h("h3", { style: "margin-top:0" }, `Datos para ${etq().clase.toLowerCase()} ${mov || "—"}${r.req.nombre ? " · " + r.req.nombre : ""}`));
   if (r.req.desconocido) form.append(h("div", {}, chip("WARN", "Aviso"), " " + r.req.nota));
   if (r.req.transaccion) form.append(h("div", {}, chip("ERROR", "No soportado"), " " + r.req.nota));
-  else if (r.req.nota) form.append(h("div", { class: "muted" }, r.req.nota));
+  else if (r.req.nota && !r.req.desconocido) form.append(h("div", { class: "muted" }, r.req.nota));
   const grid = h("div", { style: "display:grid;grid-template-columns:150px 1fr auto;gap:5px 8px;align-items:center;margin-top:6px" });
   for (const f of r.req.requiere) {
     const v = r.vals[f];
@@ -340,7 +336,7 @@ function renderSit() {
   const tb = clear($("sitTable"));
   const span = visCols.length + 5;
   tb.append(h("tr", {}, h("th", {}, ""), h("th", {}, ""), ...visCols.map((c) => h("th", {}, c)),
-    h("th", { class: "app" }, "Datos interpretados"), h("th", { class: "app" }, etq().clase), h("th", { class: "app" }, "Avisos")));
+    h("th", { class: "app" }, "Datos"), h("th", { class: "app" }, etq().clase), h("th", { class: "app" }, "Avisos")));
   for (const e of vis) {
     const cb = h("input", { type: "checkbox" });
     cb.checked = picked.has(e.clave);
@@ -351,14 +347,14 @@ function renderSit() {
     const inp = h("input", { type: "text", maxlength: "4", style: "width:62px;text-align:center" });
     inp.value = movOf(e);
     inp.title = e.movs_candidatos.length ? "Propuesta: " + e.movs_candidatos.join(", ") : "Sin propuesta: indícalo tú";
-    inp.addEventListener("change", () => { movIn[e.clave] = inp.value.toUpperCase(); renderSit(); });
+    inp.addEventListener("change", () => { movIn[e.clave] = inp.value.toUpperCase(); delete chk[e.clave]; renderSit(); });
     const est = e.confirmado ? chip("CONFIRMADO", "confirmado") : (movOf(e) ? chip("PROPUESTO", "propuesto") : chip("SIN_PROPUESTA", "sin propuesta"));
     const r = resolve(e, movOf(e));
     const av = [...avisos(e).filter((a) => !a.startsWith("sin material") && !a.startsWith("sin centro")),
       r.req.desconocido ? "requisitos del movimiento sin definir" : "",
       r.req.destino_distinto && r.src.centro_destino === "= origen" ? "traslado entre centros con el mismo centro: ¿falta el centro destino?" : "", r.req.transaccion ? "no se hace con MIGO (" + r.req.transaccion + ")" : ""].filter(Boolean);
     tb.append(h("tr", {}, h("td", {}, cb), h("td", {}, tog), ...visCols.map((c) => h("td", {}, h("div", { class: "cell" }, e.fila1[c] || ""))),
-      h("td", {}, interpretadoCell(e)), h("td", {}, inp, " ", est), h("td", {}, av.join(" · "))));
+      h("td", {}, datosChip(e)), h("td", {}, inp, " ", est), h("td", {}, chk[e.clave] ? [chip(chk[e.clave], "chequeo: " + chk[e.clave].toLowerCase().replace(/_/g, " ")), " "] : "", av.join(" · "))));
     if (isOpen) tb.append(detailRow(e, span));
   }
   $("sitCount").textContent = `${vis.length} de ${catalog.length} escenarios visibles`;
@@ -378,7 +374,55 @@ $("sitEst").append(h("option", { value: "sel" }, "Solo seleccionados"));
 $("btnSelVis").addEventListener("click", () => { visible().forEach((e) => picked.add(e.clave)); renderSit(); });
 $("btnSelNone").addEventListener("click", () => { picked.clear(); renderSit(); });
 
-$("qty").addEventListener("change", renderSit);
+
+// ---------- chequeo previo (solo lectura) ----------
+async function chequear() {
+  const items = catalog.filter((e) => picked.has(e.clave));
+  if (!items.length) return note($("sitOut"), "Selecciona escenarios para chequear.", true);
+  const sinTipo = items.filter((e) => !movOk(movOf(e)));
+  if (sinTipo.length) return note($("sitOut"), `Indica antes ${etq().clase.toLowerCase()} (p. ej. ${etq().clase_ejemplo}) en ${sinTipo.length} escenario(s): ` +
+    sinTipo.slice(0, 8).map((e) => e.fila1["JIRA ID"]).join(", ") + (sinTipo.length > 8 ? "…" : ""), true);
+  const box = clear($("chkOut"));
+  note($("sitOut"), "Chequeando… (no se contabiliza nada)");
+  try {
+    const movs = Object.fromEntries(items.map((e) => [e.clave, movOf(e)]));
+    const r = await post("/api/sit/chequear", { stream: sel.stream, flow: sel.flow, claves: items.map((e) => e.clave), cantidad: qtyGlobal(), movs });
+    clear($("sitOut"));
+    for (const f of r.filas) chk[f.clave] = f.estado;
+    const cuenta = {};
+    r.filas.forEach((f) => { cuenta[f.estado] = (cuenta[f.estado] || 0) + 1; });
+    const card = h("div", { class: "prop" }, h("h3", { style: "margin-top:0" }, `Chequeo de ${r.filas.length} escenario(s) · solo lectura`),
+      h("div", { class: "row" }, ...Object.entries(cuenta).map(([k, n]) => h("span", {}, chip(k, k === "LISTO" ? "LISTO" : k.replace(/_/g, " ")), ` ${n}`))));
+    if (r.simulado) card.append(h("div", { class: "muted" }, "Chequeo SIMULADO: stock y registros info son inventados; sirve para ver el formato y detectar datos pendientes."));
+    if (!r.puede_proponer) card.append(h("div", { class: "muted" }, `La propuesta de cantidad desde el stock estará disponible al conectar con SAP. De momento se usa la cantidad por defecto (${qtyGlobal()}) cuando no la indiques.`));
+    const th = ["JIRA ID", "External ID - JIRA", etq().clase, "Estado", "Material", ...(esSto() ? ["Registro info"] : []), "Stock libre", "Lote (FEFO/FIFO)", "Cantidad", "Propuesta", "Detalle"];
+    const tb = h("table", {}, h("tr", {}, th.map((x) => h("th", {}, x))));
+    const propuestas = {};
+    for (const f of r.filas) {
+      const det = [f.faltan.length ? "Faltan: " + f.faltan.join(", ") : "", ...f.avisos].filter(Boolean).join(" · ");
+      const rows = f.items.length ? f.items : [null];
+      rows.forEach((it, i) => {
+        if (it && it.cantidad_propuesta != null) (propuestas[f.clave] = propuestas[f.clave] || {})[it.material] = it.cantidad_propuesta;
+        tb.append(h("tr", {}, h("td", {}, f.jira_id), h("td", {}, f.id_jira_unidad), h("td", {}, f.mov), h("td", {}, i === 0 ? chip(f.estado) : ""),
+          h("td", {}, it ? it.material : ""),
+          ...(esSto() ? [h("td", {}, it ? (it.registro_info ? chip("OK", "OK") : chip("ERROR", "FALTA (ME11)")) : "")] : []),
+          h("td", {}, it ? `${it.stock} (${it.fuente_stock})` : ""), h("td", {}, it ? (it.lote || "—") + (it.lote ? ` · ${it.lote_stock}` : "") : ""),
+          h("td", {}, it ? `${it.cantidad} (${it.cantidad_origen})` : ""), h("td", {}, it && it.cantidad_propuesta != null ? `${it.cantidad_propuesta} · lote ${it.lote_propuesto}` : ""),
+          h("td", {}, i === 0 ? det : "")));
+      });
+    }
+    card.append(h("div", { class: "scroll", style: "max-height:300px;margin-top:8px" }, tb));
+    if (Object.keys(propuestas).length) card.append(h("div", { class: "row", style: "margin-top:8px" },
+      h("button", { onclick: () => { cantidadesOk = propuestas; note($("sitOut"), "Cantidades propuestas aceptadas: se usarán al lanzar."); } }, "Usar las cantidades propuestas"),
+      h("span", { class: "muted" }, "Si no las aceptas, se usa la cantidad por defecto.")));
+    card.append(h("div", { style: "margin-top:8px" }, h("button", { class: "sec", onclick: () => clear($("chkOut")) }, "Cerrar informe")));
+    box.append(card);
+    renderSit();
+  } catch (e) { note($("sitOut"), e.message, true); }
+}
+$("btnChk").addEventListener("click", chequear);
+
+$("qty").addEventListener("change", () => { for (const k of Object.keys(chk)) delete chk[k]; cantidadesOk = {}; renderSit(); });
 $("btnRunSit").addEventListener("click", async () => {
   const items = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
   const malos = items.filter((i) => !movOk(i.mov));
@@ -389,14 +433,18 @@ $("btnRunSit").addEventListener("click", async () => {
   const falta = rs.filter((r) => !r.req.transaccion && r.faltan.length).length;
   const resumen = {};
   items.forEach((i) => { resumen[i.mov] = (resumen[i.mov] || 0) + 1; });
+  const sinChk = items.filter((i) => !chk[i.e.clave]).length;
+  const malChk = items.filter((i) => ["SIN_REGISTRO_INFO", "SIN_STOCK"].includes(chk[i.e.clave])).length;
   const txt = `Vas a lanzar ${items.length} escenario(s) en modo SIMULADO (no se conecta a SAP).\n\n` +
+    (sinChk ? `AVISO: ${sinChk} escenario(s) sin chequear (botón «Chequear datos»: comprueba datos, registro info y stock sin contabilizar).\n` : "") +
+    (malChk ? `${malChk} salieron del chequeo sin registro info o sin stock y no se ejecutarán.\n` : "") + 
     `${etq().clase}: ${Object.entries(resumen).map(([m, n]) => `${m} × ${n}`).join(", ")}\nCantidad por defecto: ${qtyGlobal()}\n` +
     (falta ? `${falta} tienen datos pendientes y no se ejecutarán (FALTAN DATOS).\n` : "") +
     (noSop ? `${noSop} no se hacen con MIGO (NO SOPORTADO).\n` : "") + (esSto() ? "\nFase 1: se valida registro info, se busca lote con stock y se crean el STO y la entrega de salida." : "") + `\n¿Confirmas y lanzas?`;
   if (!window.confirm(txt)) return;
   try {
     await post("/api/sit/confirm", { stream: sel.stream, flow: sel.flow, items: items.map((i) => ({ clave: i.e.clave, mov: i.mov })) });
-    const r = await post("/api/sit/run", { stream: sel.stream, flow: sel.flow, claves: items.map((i) => i.e.clave), cantidad: qtyGlobal() });
+    const r = await post("/api/sit/run", { stream: sel.stream, flow: sel.flow, claves: items.map((i) => i.e.clave), cantidad: qtyGlobal(), cantidades: cantidadesOk });
     items.forEach((i) => { i.e.confirmado = true; i.e.mov = i.mov; });
     clear($("sitOut")); renderSit();
     setTab("res"); openRun(r.id);
@@ -433,7 +481,7 @@ const TABS_SIT = {
 };
 const TABS_STO = {
   escenarios: ["Escenarios", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["unidad", "Location by Unit"], ["escenario", "Test Scenario"], ["mov", "Tipo doc."], ["estado", "Estado"], ["sto", "STO"], ["entrega", "Entrega"], ["detalle", "Detalle"]]],
-  sto: ["STO creados", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["sto", "STO"], ["tipo", "Tipo"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["wm", "WM"], ["centro_receptor", "Centro receptor"], ["alm_receptor", "Alm. receptor"], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["registro_info", "Registro info"], ["org_compras", "Org. compras"], ["grupo_compras", "Grupo compras"], ["sociedad", "Sociedad"], ["incoterms", "Incoterms"], ["fuente_stock", "Stock desde"]]],
+  sto: ["STO creados", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["sto", "STO"], ["tipo", "Tipo"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["wm", "WM"], ["centro_receptor", "Centro receptor"], ["alm_receptor", "Alm. receptor"], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["registro_info", "Registro info"], ["org_compras", "Org. compras"], ["grupo_compras", "Grupo compras"], ["sociedad", "Sociedad"], ["fuente_stock", "Stock desde"]]],
   entregas: ["Entregas de salida", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["entrega", "Entrega"], ["sto", "STO"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["wm", "WM"]]],
   pasos: ["Pasos del escenario", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["paso", "Paso"], ["fase", "Fase"], ["equipo", "Equipo"], ["transacciones", "Transacciones"], ["descripcion", "Descripción"], ["esperado", "Resultado esperado"]]],
 };
@@ -462,9 +510,9 @@ async function openRun(id) {
   $("secDetail").classList.remove("hide");
   $("detTitle").textContent = `Ejecución ${r.id} · ${r.fichero}${r.simulado ? " · SIMULADA" : ""}`;
   const cards = clear($("detSum"));
-  cards.append(h("div", { class: "kpi" }, "Estado", h("b", {}, r.estado.replace("_", " "))));
+  cards.append(h("div", { class: "kpi" }, "Estado", h("b", {}, r.estado.replace(/_/g, " "))));
   for (const k of ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "SIN_REGISTRO_INFO", "NO_SOPORTADO"])
-    if (k in (r.resumen || {}) || ["OK", "PARCIAL", "SIN_STOCK", "ERROR"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace("_", " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
+    if (k in (r.resumen || {}) || ["OK", "PARCIAL", "SIN_STOCK", "ERROR"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace(/_/g, " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
   showTab(r.tipo === "sit" ? (curTab in tabsDe(r) ? curTab : "escenarios") : "filas");
   $("detLog").textContent = r.log.map((l) => `${l.t} [${l.nivel}] ${l.msg}`).join("\n");
   if (r.estado === "EN_CURSO") poll = setTimeout(() => openRun(id), 800);

@@ -15,6 +15,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 import engine
 import sit_engine
+import chequeo
 import sit_import
 import sto_engine
 import sto_import
@@ -92,7 +93,7 @@ def execute(stream, flow, filename, run_id):
         log("INFO", "Modo SIMULADO: no se conecta a SAP.")
         headers, rows = read_xlsx(d / "data" / filename)
         log("INFO", "Leídas %d filas de %s" % (len(rows), filename))
-        run["filas"], run["resumen"] = engine.run(headers, rows, engine.MockSap(), log)
+        run["filas"], run["resumen"] = engine.run(headers, rows, engine.crear_backend(), log)
         run["estado"] = "ERROR" if run["resumen"].get("error") else "FINALIZADA"
     except Exception as e:
         log("ERROR", "Fallo en la ejecución: %s" % e)
@@ -127,7 +128,7 @@ def load_defaults(d):
 VALOR = re.compile(r"^[A-Za-z0-9_\-\. /,;]{0,60}$")
 
 
-def execute_sit(stream, flow, claves, run_id, cantidad):
+def execute_sit(stream, flow, claves, run_id, cantidad, propuestas=None):
     d = flow_dir(stream, flow)
     meta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
     path = d / "results" / (run_id + ".json")
@@ -147,7 +148,7 @@ def execute_sit(stream, flow, claves, run_id, cantidad):
         sel = [e for e in load_catalog(d) if e["clave"] in set(claves)]
         log("INFO", "Cantidad por defecto: %s" % cantidad)
         motor = sto_engine if meta.get("modo") == "sto" else sit_engine
-        out, run["resumen"] = motor.ejecutar(sel, engine.MockSap(), log, cantidad, load_req(d), load_defaults(d))
+        out, run["resumen"] = motor.ejecutar(sel, engine.crear_backend(), log, cantidad, load_req(d), load_defaults(d), propuestas)
         run.update(out)
         run["estado"] = "FINALIZADA"
     except Exception as e:
@@ -374,6 +375,26 @@ class Handler(BaseHTTPRequestHandler):
                 defaults_path(d).write_text(json.dumps(df, ensure_ascii=False), encoding="utf-8")
             catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
             return self._send(200, {"ok": True, "escenarios": cat, "defaults": load_defaults(d)})
+        if u.path == "/api/sit/chequear":
+            d = flow_dir(data.get("stream", ""), data.get("flow", ""))
+            claves = {str(c) for c in data.get("claves", [])}
+            if not claves:
+                raise ValueError("No hay escenarios seleccionados")
+            try:
+                cantidad = float(str(data.get("cantidad", 1)).replace(",", "."))
+            except ValueError:
+                raise ValueError("Cantidad no válida")
+            if not 0 < cantidad <= 1000000:
+                raise ValueError("Cantidad fuera de rango")
+            modo = json.loads((d / "flow.json").read_text(encoding="utf-8")).get("modo", "migo")
+            movs = {str(k): str(v).strip().upper() for k, v in (data.get("movs") or {}).items()}
+            sel = []
+            for e in load_catalog(d):
+                if e["clave"] in claves:
+                    if re.match(r"^[0-9A-Z]{3,4}$", movs.get(e["clave"], "")):
+                        e = {**e, "mov": movs[e["clave"]]}   # el tipo que se ve en pantalla, sin confirmarlo
+                    sel.append(e)
+            return self._send(200, chequeo.chequear(sel, engine.crear_backend(), cantidad, load_req(d), load_defaults(d), modo))
         if u.path == "/api/sit/run":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             claves = [str(c) for c in data.get("claves", [])]
@@ -390,7 +411,17 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < cantidad <= 1000000:
                 raise ValueError("Cantidad fuera de rango")
             cantidad = int(cantidad) if cantidad == int(cantidad) else cantidad
-            threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid, cantidad), daemon=True).start()
+            props = {}
+            for c, mats in (data.get("cantidades") or {}).items():
+                if c in idx and isinstance(mats, dict):
+                    for m, q in mats.items():
+                        try:
+                            q = float(q)
+                        except (TypeError, ValueError):
+                            continue
+                        if 0 < q <= 1000000 and re.match(r"^[A-Za-z0-9_\-]{1,40}$", str(m)):
+                            props.setdefault(c, {})[str(m)] = int(q) if q == int(q) else q
+            threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid, cantidad, props), daemon=True).start()
             return self._send(200, {"ok": True, "id": rid})
         if u.path == "/api/nl":
             return self._send(200, interpret(str(data.get("text", ""))[:500], data.get("stream", ""), data.get("flow", "")))
