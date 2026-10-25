@@ -306,9 +306,20 @@ def consultar(ses, material, centro, almacen="", lotes=True, especiales=False, m
                 if i not in leidas:
                     leidas[i] = {n: _celda(grid, i, n) for n in usar}
             r += visibles
+        vacia = lambda f: all(not str(v).strip() for v in f.values())
+        for i in [i for i in sorted(leidas) if vacia(leidas[i])]:      # segunda pasada: relee las vacías con el ALV ya asentado
+            try:
+                grid.firstVisibleRow = i
+            except Exception:
+                pass
+            time.sleep(0.3)
+            leidas[i] = {n: _celda(grid, i, n) for n in usar}
         filas = [leidas[i] for i in sorted(leidas)]
-        vacias = sum(1 for f in filas[:-1] if all(not str(v).strip() for v in f.values()))   # la última fila es la de totales (sin material)
-        if vacias > 0 and len(leidas) >= total:
+        # Las filas de totales/subtotales (una por centro y la general) salen vacías aunque estén cargadas: se aceptan tantas como centros + 1.
+        # Una lectura truncada deja cientos de filas vacías, muy por encima de ese límite.
+        centros = {str(f.get("WERKS", "")).strip() for f in filas if str(f.get("WERKS", "")).strip()}
+        vacias = sum(1 for f in filas if vacia(f))
+        if vacias > len(centros) + 1 and len(leidas) >= total:
             raise SapError("Lectura incompleta de MB52: %d de %d filas llegaron vacías. No se usan datos parciales." % (vacias, total))
         return {"mensaje": mensaje, "columnas": cols, "filas": filas, "total_filas": total, "leidas": len(leidas), "vacias": vacias, "grid": _attr(grid, "Id")}
     finally:

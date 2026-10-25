@@ -164,7 +164,7 @@ def preparar_real(d, claves, cantidad_global, lotes_ya_elegidos=None):
             if e is None:
                 raise ValueError("Escenario desconocido.")
             fila = {"clave": c, "jira_id": e["jira_id"], "id_jira_unidad": e["id_jira_unidad"], "escenario": e["escenario"], "mov": e["mov"],
-                    "ok": False, "problema": "", "material": "", "centro": "", "almacen": "", "almacen_destino": "", "lote": "", "cantidad": "", "motivo": "", "huella": ""}
+                    "ok": False, "problema": "", "material": "", "centro": "", "centro_destino": "", "almacen": "", "almacen_destino": "", "lote": "", "cantidad": "", "motivo": "", "huella": ""}
             vals, fuentes, faltan, rq = sit_import.resolver(e, e["mov"], req, defaults, cantidad_global)
             if e["mov"] not in sap_migo.MOVIMIENTOS_PERMITIDOS:
                 fila["problema"] = "El movimiento %s aún no se puede contabilizar de verdad (solo %s)." % (e["mov"] or "—", ", ".join(sorted(sap_migo.MOVIMIENTOS_PERMITIDOS)))
@@ -198,9 +198,14 @@ def preparar_real(d, claves, cantidad_global, lotes_ya_elegidos=None):
                         fila["problema"] = "Ningún lote libre cubre %s por sí solo (repartir entre varios lotes aún no está soportado)." % vals["cantidad"]
                     else:
                         dest = vals.get("alm_destino", "") if e["mov"] in sap_migo.CON_DESTINO else ""
-                        fila.update({"ok": True, "material": mat, "centro": centro, "almacen": alm, "almacen_destino": dest, "lote": lote,
+                        cdest = str(vals.get("centro_destino", "") or "").strip() if e["mov"] in sap_migo.CON_CENTRO_DESTINO else ""
+                        if e["mov"] in sap_migo.CON_CENTRO_DESTINO and (not cdest or cdest.startswith("=") or cdest == centro):
+                            fila["problema"] = "El traslado entre centros necesita un centro de destino distinto del de origen."
+                            out.append(fila)
+                            continue
+                        fila.update({"ok": True, "material": mat, "centro": centro, "centro_destino": cdest, "almacen": alm, "almacen_destino": dest, "lote": lote,
                                      "cantidad": sap_migo.normalizar_cantidad(vals["cantidad"]), "motivo": vals.get("motivo", ""), "um": ""})
-                        fila["huella"] = sap_migo.huella(e["mov"], mat, centro, alm, lote, fila["cantidad"], fila["motivo"], dest)
+                        fila["huella"] = sap_migo.huella(e["mov"], mat, centro, alm, lote, fila["cantidad"], fila["motivo"], dest, cdest)
             out.append(fila)
     finally:
         if be is not None and hasattr(be, "cerrar"):
@@ -262,19 +267,20 @@ def execute_real(stream, flow, items, run_id):
                     "pedida": it["cantidad"], "movida": 0, "estado": "", "documentos": "", "detalle": "", "stock_antes": "", "stock_despues": ""}
             try:
                 dest = it.get("almacen_destino", "")
+                cdest = it.get("centro_destino", "") or it["centro"]
                 antes = sap_migo.stock_lote(ses, it["material"], it["centro"], it["almacen"], it["lote"])
-                antes_d = sap_migo.stock_lote(ses, it["material"], it["centro"], dest, it["lote"]) if dest else None
+                antes_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, it["lote"]) if dest else None
                 log("INFO", "%s stock antes: %s%s" % (it["jira_id"], antes, (" · destino " + str(antes_d)) if dest else ""))
                 res = sap_migo.traspaso(ses, mov=it["mov"], material=it["material"], centro=it["centro"], almacen=it["almacen"], lote=it["lote"],
                                         cantidad=it["cantidad"], um="", modo="contabilizar", clave=it["huella"], motivo=it["motivo"],
-                                        almacen_destino=dest)
+                                        almacen_destino=dest, centro_destino=it.get("centro_destino", ""))
                 despues = sap_migo.stock_lote(ses, it["material"], it["centro"], it["almacen"], it["lote"])
-                despues_d = sap_migo.stock_lote(ses, it["material"], it["centro"], dest, it["lote"]) if dest else None
+                despues_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, it["lote"]) if dest else None
                 log("INFO", "%s documento %s · stock después: %s%s" % (it["jira_id"], res["documento"] or "(no leído)", despues, (" · destino " + str(despues_d)) if dest else ""))
                 cant = float(str(it["cantidad"]).replace(",", "."))
                 esperado = (it["mov"] == "344" and abs((antes["libre"] - despues["libre"]) - cant) < 1e-6 and abs((despues["bloqueado"] - antes["bloqueado"]) - cant) < 1e-6) \
                     or (it["mov"] == "343" and abs((despues["libre"] - antes["libre"]) - cant) < 1e-6 and abs((antes["bloqueado"] - despues["bloqueado"]) - cant) < 1e-6) \
-                    or (it["mov"] == "311" and dest and abs((antes["libre"] - despues["libre"]) - cant) < 1e-6 and abs((despues_d["libre"] - antes_d["libre"]) - cant) < 1e-6)
+                    or (it["mov"] in ("311", "301") and dest and abs((antes["libre"] - despues["libre"]) - cant) < 1e-6 and abs((despues_d["libre"] - antes_d["libre"]) - cant) < 1e-6)
                 fila.update({"movida": cant, "estado": "CONTABILIZADO" if esperado else "REVISAR", "documentos": res["documento"], "detalle": res["mensaje"],
                              "stock_antes": "origen: libre %s · bloqueado %s" % (antes["libre"], antes["bloqueado"]) + ((" | destino: libre %s" % antes_d["libre"]) if dest else ""),
                              "stock_despues": "origen: libre %s · bloqueado %s" % (despues["libre"], despues["bloqueado"]) + ((" | destino: libre %s" % despues_d["libre"]) if dest else "")})

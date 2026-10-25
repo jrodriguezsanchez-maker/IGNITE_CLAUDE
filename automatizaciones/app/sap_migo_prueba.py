@@ -50,7 +50,7 @@ def main():
             print("ABORTADO: la sesión no es del sistema/mandante permitidos.")
             return 1
         print("Sesión %s/%s · sesión nueva creada por el programa: %s" % (p["sid"], p["mandante"], creada), flush=True)
-        print("huella calculada:", sap_migo.huella(DATOS["mov"], DATOS["material"], DATOS["centro"], DATOS["almacen"], DATOS["lote"], DATOS["cantidad"], DATOS["motivo"], DATOS.get("almacen_destino", "")), flush=True)
+        print("huella calculada:", sap_migo.huella(DATOS["mov"], DATOS["material"], DATOS["centro"], DATOS["almacen"], DATOS["lote"], DATOS["cantidad"], DATOS["motivo"], DATOS.get("almacen_destino", ""), DATOS.get("centro_destino", "")), flush=True)
         print("STOCK ANTES  (MB52, lote %s):" % DATOS["lote"], stock_lote(ses), flush=True)
         try:
             res = sap_migo.traspaso(ses, modo=modo, clave=clave, **DATOS)

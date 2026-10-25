@@ -566,7 +566,7 @@ $("btnPost").addEventListener("click", async () => {
     const ok = r.documentos.filter((d) => d.ok), no = r.documentos.filter((d) => !d.ok);
     if (!ok.length) return note($("sitOut"), "Ninguno se puede contabilizar: " + no.slice(0, 4).map((d) => `${d.jira_id}: ${d.problema}`).join(" | "), true);
     if (ok.length > r.maximo) return note($("sitOut"), `Máximo ${r.maximo} documentos por ejecución: has seleccionado ${ok.length}.`, true);
-    const lineas = ok.map((d) => `• ${d.jira_id} · mov ${d.mov} · material ${d.material} · centro ${d.centro} · almacén ${d.almacen}${d.almacen_destino ? " → " + d.almacen_destino : ""} · lote ${d.lote || "sin lote"} · cantidad ${d.cantidad} · motivo ${d.motivo ? d.motivo + " (" + (((motivos[d.mov] || []).find((m) => m.codigo === d.motivo) || {}).texto || "?") + ")" : "—"}   [huella ${d.huella}]`);
+    const lineas = ok.map((d) => `• ${d.jira_id} · mov ${d.mov} · material ${d.material} · centro ${d.centro}${d.centro_destino ? " → " + d.centro_destino : ""} · almacén ${d.almacen}${d.almacen_destino ? " → " + d.almacen_destino : ""} · lote ${d.lote || "sin lote"} · cantidad ${d.cantidad} · motivo ${d.motivo ? d.motivo + " (" + (((motivos[d.mov] || []).find((m) => m.codigo === d.motivo) || {}).texto || "?") + ")" : "—"}   [huella ${d.huella}]`);
     const yaHechos = ok.filter((d) => ejec[d.clave] && ejec[d.clave].estado === "OK").map((d) => d.jira_id);
     const okUser = await confirmarContabilizar(sistemasModo, lineas, no.map((d) => `${d.jira_id}: ${d.problema}`), yaHechos);
     if (!okUser) return note($("sitOut"), "Cancelado: no se ha contabilizado nada.");

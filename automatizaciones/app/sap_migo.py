@@ -18,9 +18,10 @@ import time
 
 import sap_mb52
 
-MOVIMIENTOS_PERMITIDOS = {"311", "343", "344"}   # contabilización real: se amplía tras validar cada tipo con el Check (311 validado: 0 errores)
-MOVIMIENTOS_COMPROBAR = {"311", "321", "322", "343", "344"}   # el Check (sin contabilizar) sí puede probarlos para validar la pantalla
-CON_DESTINO = {"311"}                         # movimientos que necesitan almacén de destino
+MOVIMIENTOS_PERMITIDOS = {"301", "311", "343", "344"}   # contabilización real: se amplía tras validar cada tipo con el Check (311 validado: 0 errores)
+MOVIMIENTOS_COMPROBAR = {"301", "311", "321", "322", "343", "344"}   # el Check (sin contabilizar) sí puede probarlos para validar la pantalla
+CON_DESTINO = {"301", "311"}                  # movimientos que necesitan almacén de destino
+CON_CENTRO_DESTINO = {"301"}                  # traslado entre centros: además, centro de destino
 MAX_CANTIDAD = 100000
 CONTENEDORES = ("GuiUserArea", "GuiSimpleContainer", "GuiContainerShell", "GuiTab", "GuiTabStrip", "GuiScrollContainer", "GuiCustomControl",
                 "GuiSplitterContainer", "GuiMainWindow", "GuiGOS", "GuiTableControl")
@@ -44,11 +45,13 @@ def cantidad_sap(c):
     return normalizar_cantidad(c).replace(".", ",")
 
 
-def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino=""):
+def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino="", centro_destino=""):
     """Código que identifica los datos exactos. Cambia si cambia cualquiera de ellos."""
     txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, normalizar_cantidad(cantidad), motivo))
     if almacen_destino:
         txt += "|" + str(almacen_destino).strip().upper()
+    if centro_destino:
+        txt += "|C:" + str(centro_destino).strip().upper()
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()[:8].upper()
 
 
@@ -112,6 +115,24 @@ def _boton_barra(ses, textos):
     return None
 
 
+def _etiquetas(w):
+    """Etiquetas (GuiLabel) de una ventana, en cualquier nivel de contenedores."""
+    res = []
+
+    def rec(o):
+        try:
+            for i in range(o.Children.Count):
+                h = o.Children.Item(i)
+                if _attr(h, "Type") == "GuiLabel":
+                    res.append(h)
+                if _attr(h, "Type") in CONTENEDORES or _attr(h, "ContainerType", False):
+                    rec(h)
+        except Exception:
+            pass
+    rec(w)
+    return res
+
+
 def _texto_ventana(ses, nivel=1, max_filas=25):
     """Lee (sin pulsar nada) el contenido de la ventana emergente: etiquetas, tablas ALV y botones disponibles."""
     try:
@@ -153,7 +174,7 @@ def _mensaje(ses):
     return str(sb.Text).strip(), str(sb.MessageType)
 
 
-def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo="", almacen_destino=""):
+def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo="", almacen_destino="", centro_destino=""):
     """Prepara (y opcionalmente contabiliza) un traspaso en MIGO. Devuelve un dict con el resultado."""
     mov, cantidad = str(mov).strip().upper(), cantidad
     permitidos = MOVIMIENTOS_PERMITIDOS if modo == "contabilizar" else MOVIMIENTOS_COMPROBAR
@@ -161,6 +182,8 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         raise MigoError("Movimiento %s no permitido para %s (permitidos: %s)." % (mov, "contabilizar de verdad" if modo == "contabilizar" else "comprobar", ", ".join(sorted(permitidos))))
     if mov in CON_DESTINO and not str(almacen_destino).strip():
         raise MigoError("El movimiento %s necesita almacén de destino." % mov)
+    if mov in CON_CENTRO_DESTINO and not str(centro_destino).strip():
+        raise MigoError("El movimiento %s necesita centro de destino." % mov)
     try:
         cant = float(str(cantidad).replace(",", "."))
     except ValueError:
@@ -169,7 +192,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         raise MigoError("Cantidad fuera de rango (máximo %s)." % MAX_CANTIDAD)
     if modo not in ("comprobar", "contabilizar"):
         raise MigoError("Modo no válido.")
-    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo, almacen_destino)
+    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo, almacen_destino, centro_destino)
     if modo == "contabilizar" and (clave or "").upper() != esperada:
         raise MigoError("La huella no coincide con los datos: el usuario no ha confirmado estos datos exactos. No se contabiliza.")
     if str(ses.Info.Transaction) != "SESSION_MANAGER" or ses.Children.Count > 1:
@@ -221,6 +244,16 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         intro("al introducir el material")
         campo("GODYNPRO-NAME1").text = str(centro)                                          # centro
         campo("GODYNPRO-LGOBE").text = str(almacen)                                         # almacén (origen)
+        if mov in CON_CENTRO_DESTINO:                                                        # centro de destino (el nombre del campo se descubre en el primer Check)
+            cd = None
+            for suf in ("GOITEM-UMWRK", "GODYNPRO-UMWRK", "GOITEM-UMNAME1", "GODYNPRO-UMNAME1"):
+                cd = _buscar(usr(), "GuiCTextField", suf) or _buscar(usr(), "GuiTextField", suf)
+                if cd is not None and bool(_attr(cd, "Changeable", True)):
+                    break
+                cd = None
+            if cd is None:
+                raise MigoError("No encuentro el campo editable de centro de destino. Campos editables visibles: %s" % _editables(usr()))
+            cd.text = str(centro_destino)
         if mov in CON_DESTINO:
             campo("GOITEM-UMLGOBE").text = str(almacen_destino)                             # almacén de destino
         intro("al introducir centro y almacén")
@@ -295,6 +328,36 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
                 raise MigoError("No encuentro el botón Post de MIGO.")
             post.press()
             _esperar(ses)
+            if ses.Children.Count > 1 and "log" in str(_attr(ses.findById("wnd[1]"), "Text")).lower():
+                # «Display logs» tras el Post: errores de sistema (p. ej. configuración de FI). Se cierra con Continue y se lee el mensaje COMPLETO de la barra de estado.
+                registro = _texto_ventana(ses)
+                b = _buscar(ses.findById("wnd[1]"), "GuiButton", "btn[17]")
+                try:
+                    errores = int(str(_attr(b, "Text", "0")).strip() or 0) if b is not None else 0
+                except ValueError:
+                    errores = 0
+                largo = ""
+                if errores > 0:                                  # el texto del mensaje sale cortado en la lista: se abre el «Long Text» de la primera línea de error
+                    try:
+                        etq_msg = [h for h in _etiquetas(ses.findById("wnd[1]")) if len(str(_attr(h, "Text")).strip()) > 20]
+                        if etq_msg:
+                            etq_msg[0].setFocus()
+                        ses.findById("wnd[1]/tbar[0]/btn[42]").press()
+                        _esperar(ses, 20)
+                        if ses.Children.Count > 2:
+                            largo = _texto_ventana(ses, nivel=2)
+                            ses.findById("wnd[2]").close()
+                            _esperar(ses, 20)
+                    except Exception:
+                        pass
+                ses.findById("wnd[1]/tbar[0]/btn[0]").press()
+                _esperar(ses)
+                if errores > 0:
+                    completo, _t = _mensaje(ses)
+                    if largo:
+                        completo = (completo + " | Long text: " + largo)[:900]
+                    textos = [x.replace("texto: ", "") for x in registro.split(" · ") if x.startswith("texto: ") and len(x) > 20]
+                    raise MigoError("SAP rechaza el Post (nada contabilizado): " + (completo or "; ".join(textos) or registro))
             sin_popup("tras Post")
             res["mensaje"], res["tipo_mensaje"] = _mensaje(ses)
             if res["tipo_mensaje"] in ("E", "A"):
