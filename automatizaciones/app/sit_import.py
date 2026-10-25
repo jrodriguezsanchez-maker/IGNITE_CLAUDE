@@ -96,9 +96,20 @@ def proponer_mov(texto, reglas):
     return "", "Sin regla: indícalo tú", False
 
 
-def importar(xlsx_path, rules_path):
+def _pasa_filtro(fila, filtro):
+    """filtro = {"L1": "5.SCM", "L2": ["5.6 Logistics Flows"]}; sin filtro entra todo."""
+    for col, vals in (filtro or {}).items():
+        vals = [vals] if isinstance(vals, str) else vals
+        if _s(fila.get(col)) not in vals:
+            return False
+    return True
+
+
+def importar(xlsx_path, rules_path, filtro=None):
+    """Devuelve (catalogo, stats). stats: escenarios con MIGO totales, incluidos y excluidos por L1/L2."""
     reglas, marcadores = load_rules(rules_path)
-    _, rows = read_xlsx(xlsx_path, "SCRIPTS")
+    cabeceras, rows = read_xlsx(xlsx_path, "SCRIPTS")
+    stats = {"total_migo": 0, "incluidos": 0, "excluidos": {}, "filtro": filtro or {}, "columnas": cabeceras}
     grupos = OrderedDict()
     for r in rows:
         nid = _s(r.get("New ID"))
@@ -120,6 +131,12 @@ def importar(xlsx_path, rules_path):
         p1 = filas[0]
         if "MIGO" not in clean_transaction(p1.get("Transaction")):
             continue
+        stats["total_migo"] += 1
+        if not _pasa_filtro(p1, filtro):
+            k = "%s / %s" % (_s(p1.get("L1")), _s(p1.get("L2")))
+            stats["excluidos"][k] = stats["excluidos"].get(k, 0) + 1
+            continue
+        stats["incluidos"] += 1
         datos = parse_data(p1.get("Data"))
         texto = " ".join([_s(p1.get("Test Step Description")), _s(p1.get("Data"))]).lower()
         mov, nota, req = proponer_mov(texto, reglas)
@@ -148,5 +165,6 @@ def importar(xlsx_path, rules_path):
             "mov": "",             # lo fija el usuario al confirmar
             "confirmado": False,
             "pasos": pasos,
+            "fila1": {k: _s(v)[:1500] for k, v in p1.items()},   # paso 1 con las columnas originales del Excel
         })
-    return catalogo
+    return catalogo, stats

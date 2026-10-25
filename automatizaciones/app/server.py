@@ -47,7 +47,8 @@ def tree():
             meta = json.loads((f / "flow.json").read_text(encoding="utf-8"))
             runs = list((f / "results").glob("*.json"))
             flujos.append({"id": f.name, "nombre": meta.get("nombre", f.name), "descripcion": meta.get("descripcion", ""),
-                           "reglas": meta.get("reglas", {}), "tipo": meta.get("tipo", "excel_filas"), "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
+                           "reglas": meta.get("reglas", {}), "tipo": meta.get("tipo", "excel_filas"),
+                           "config": {k: meta[k] for k in ("filtro", "columnas_por_defecto", "filtros_columnas") if k in meta}, "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
         out.append({"id": s.name, "flujos": flujos})
     return out
 
@@ -139,26 +140,47 @@ def _plain(s):
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
 
 
-def interpret(text):
-    """Interpretación local por palabras clave. No envía nada fuera del equipo."""
+STOP = {"el", "la", "los", "las", "de", "del", "un", "una", "con", "para", "por", "que", "en", "y", "o", "a", "al", "lanza", "lanzar",
+        "ejecuta", "ejecutar", "quiero", "las", "pruebas", "prueba", "escenario", "escenarios", "fichero", "excel", "todos", "todas", "ultimo", "ultima"}
+SINONIMOS = {"bloquear": "block", "bloqueo": "block", "bloqueado": "block", "desbloquear": "unblock", "desbloqueo": "unblock",
+             "traslado": "transfer", "traslados": "transfer", "transferencia": "transfer", "entrada": "receipt", "recepcion": "receipt",
+             "salida": "issue", "desguace": "scrap", "chatarra": "scrap", "calidad": "quality", "inventario": "inventory",
+             "lote": "batch", "lotes": "batch", "produccion": "production", "pedido": "purchase", "bloqueos": "block"}
+
+
+def interpret(text, stream, flow):
+    """Propone fichero y escenarios del flujo seleccionado con reglas locales. No lanza nada ni envía nada fuera."""
+    d = flow_dir(stream, flow)
     t = _plain(text)
-    words = set(re.findall(r"[a-z0-9]+", t))
-    best = None
-    for s in tree():
-        for f in s["flujos"]:
-            meta = json.loads((ROOT / s["id"] / "flujos" / f["id"] / "flow.json").read_text(encoding="utf-8"))
-            kws = {_plain(k) for k in meta.get("palabras_clave", [])} | set(re.findall(r"[a-z0-9]+", _plain(f["nombre"])))
-            score = len(words & kws)
-            if score and (not best or score > best[0]):
-                best = (score, s["id"], f["id"])
-    if not best:
-        return {"ok": False, "mensaje": "No he encontrado un flujo que encaje. Prueba con el nombre del flujo."}
-    _, stream, flow = best
-    files = list_files(flow_dir(stream, flow))
-    chosen = next((f for f in files if _plain(f["nombre"]).rsplit(".", 1)[0] in t), files[0] if files else None)
-    accion = "lanzar" if words & {"lanza", "lanzar", "ejecuta", "ejecutar", "corre", "simula", "simular", "pruebas", "prueba"} else "ver"
-    return {"ok": True, "stream": stream, "flujo": flow, "fichero": chosen["nombre"] if chosen else None, "accion": accion,
-            "mensaje": "Entendido: flujo «%s»%s." % (flow, (", fichero «%s»" % chosen["nombre"]) if chosen else ", pero no hay ficheros subidos")}
+    words = [w for w in re.findall(r"[a-z0-9_\-\.]+", t) if w not in STOP and len(w) >= 2]
+    terms = [{w, SINONIMOS.get(w, w)} for w in words]
+    files = list_files(d)
+    fichero = next((f["nombre"] for f in files if any(_plain(f["nombre"]).find(w) >= 0 for w in words if len(w) > 3)), None)
+    if not fichero and re.search(r"ultim", t) and files:
+        fichero = files[0]["nombre"]
+    out = {"ok": True, "fichero": fichero, "claves": [], "ejemplos": [], "mensaje": ""}
+    meta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
+    if meta.get("tipo") == "sit_jira":
+        cat = load_catalog(d)
+        scored = []
+        for e in cat:
+            blob = _plain(" ".join([e["jira_id"], e["id_jira_unidad"], e["escenario"], e["descripcion_paso1"], e["unidad"], e["l3"],
+                                    " ".join(e["datos"]["materiales"]), " ".join(e["datos"]["plantas"]), " ".join(e["movs_candidatos"]),
+                                    e["fila1"].get("Data", "")]))
+            sc = sum(1 for alts in terms if any(a in blob for a in alts))
+            if sc:
+                scored.append((sc, e))
+        if scored:
+            top = max(sc for sc, _ in scored)
+            sel = [e for sc, e in scored if sc == top][:200]
+            out["claves"] = [e["clave"] for e in sel]
+            out["ejemplos"] = ["%s · %s · %s" % (e["jira_id"], e["unidad"], e["escenario"][:70].replace("\n", " ")) for e in sel[:5]]
+            out["mensaje"] = "%d escenario(s) coinciden con %d de %d palabras." % (len(sel), top, len(terms))
+        elif words:
+            out["mensaje"] = "Ningún escenario coincide. Prueba con un ID de Jira, una unidad (Belgium…) o un tipo de operación (traslado, bloqueo…)."
+    if not fichero and not out["claves"] and not out["mensaje"]:
+        out["ok"], out["mensaje"] = False, "No he entendido qué buscas."
+    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -226,7 +248,9 @@ class Handler(BaseHTTPRequestHandler):
             mapping, missing = engine.map_columns(headers)
             return self._send(200, {"cabeceras": headers, "filas": rows[:50], "total": len(rows), "faltan": missing})
         if u.path == "/api/sit/catalog":
-            return self._send(200, load_catalog(flow_dir(q.get("stream", ""), q.get("flow", ""))))
+            d = flow_dir(q.get("stream", ""), q.get("flow", ""))
+            mp = d / "data" / "catalogo_meta.json"
+            return self._send(200, {"meta": json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}, "escenarios": load_catalog(d)})
         if u.path == "/api/runs":
             return self._send(200, list_runs())
         m = re.match(r"^/api/runs/([^/]+)$", u.path)
@@ -272,14 +296,17 @@ class Handler(BaseHTTPRequestHandler):
             name = data.get("file", "")
             if not SAFE_FILE.match(name) or not (d / "data" / name).exists():
                 raise FileNotFoundError("Fichero no encontrado")
-            nuevo = sit_import.importar(d / "data" / name, d / "reglas_movimiento.json")
+            filtro = json.loads((d / "flow.json").read_text(encoding="utf-8")).get("filtro")
+            nuevo, stats = sit_import.importar(d / "data" / name, d / "reglas_movimiento.json", filtro)
+            stats.update({"fichero": name, "fecha": time.strftime("%Y-%m-%d %H:%M")})
+            (d / "data" / "catalogo_meta.json").write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")
             previo = {e["clave"]: e for e in load_catalog(d)}
             for e in nuevo:  # conserva confirmaciones anteriores
                 o = previo.get(e["clave"])
                 if o and o.get("confirmado"):
                     e["mov"], e["confirmado"] = o["mov"], True
             catalog_path(d).write_text(json.dumps(nuevo, ensure_ascii=False), encoding="utf-8")
-            return self._send(200, {"ok": True, "escenarios": len(nuevo)})
+            return self._send(200, {"ok": True, "escenarios": len(nuevo), "meta": stats})
         if u.path == "/api/sit/confirm":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             cat = load_catalog(d)
@@ -302,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid), daemon=True).start()
             return self._send(200, {"ok": True, "id": rid})
         if u.path == "/api/nl":
-            return self._send(200, interpret(str(data.get("text", ""))[:500]))
+            return self._send(200, interpret(str(data.get("text", ""))[:500], data.get("stream", ""), data.get("flow", "")))
         self._send(404, {"error": "No encontrado"})
 
 
