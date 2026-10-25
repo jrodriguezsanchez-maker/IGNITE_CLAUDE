@@ -1,0 +1,9 @@
+.env
+.jira_token.json
+.graph_token_cache.bin
+output/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/

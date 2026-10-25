@@ -1,0 +1,53 @@
+# ============================================================
+# SEGURIDAD / COMPLIANCE - NO SUBIR A GITHUB
+# Datos de cliente, resultados y credenciales SAP
+# ============================================================
+
+# --- Datos de prueba, resultados y logs (datos de cliente) ---
+**/data/
+**/results/
+**/logs/
+**/uploads/
+**/output/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.log
+*.pdf
+*.zip
+# Excepcion: plantillas vacias (revisar a mano antes de commitear)
+!**/templates/*.xlsx
+
+# --- Conexion SAP GUI, usuarios y contrasenas ---
+.env
+.env.*
+!.env.example
+**/secrets/
+**/connections/
+**/*connection*.json
+**/*connection*.yaml
+**/*credentials*
+**/*secret*
+**/sap_systems.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.sso
+*.ini
+saplogon*
+
+# --- Config local de Claude Code ---
+.claude/settings.local.json
+
+# --- Python / entorno ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- SO / editor ---
+.DS_Store
+Thumbs.db
+~$*

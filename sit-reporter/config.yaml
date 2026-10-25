@@ -1,0 +1,37 @@
+jira:
+  project_key: "SIT"          # Clave del proyecto JIRA
+  test_plan_key: "SIT-1"      # Key del Test Plan de Xray principal
+  # Streams definidos como componentes o etiquetas JIRA
+  streams:
+    - name: "Backend"
+      jql_filter: "component = Backend"
+    - name: "Frontend"
+      jql_filter: "component = Frontend"
+    - name: "Integraciones"
+      jql_filter: "component = Integration"
+    - name: "Base de Datos"
+      jql_filter: "component = Database"
+  # Tipos de issue para incidencias
+  incident_issue_types:
+    - "Bug"
+    - "Incident"
+  # Etiqueta para tests de integración
+  integration_label: "integration"
+
+xray:
+  base_url: "https://xray.cloud.getxray.app/api/v2"
+
+planning:
+  # Fecha de inicio y fin del SIT (formato YYYY-MM-DD)
+  start_date: "2026-09-01"
+  end_date: "2026-10-31"
+
+reports:
+  # Cuántos P1 incidentes mostrar en el ejecutivo
+  top_incidents: 10
+  # Cuántas incidencias bloqueantes mostrar
+  top_blocking: 5
+  # Directorio de salida para reportes HTML
+  output_dir: "./output"
+  # Incluir gráficos en el email (base64 inline)
+  inline_charts: true

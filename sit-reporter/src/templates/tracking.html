@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>SIT Dashboard Seguimiento - {{ report.project_key }}</title>
+<style>
+  body { margin:0; padding:0; background:#0f172a; font-family:'Segoe UI',Arial,sans-serif; color:#e2e8f0; }
+  .container { max-width:1000px; margin:0 auto; padding:24px 16px; }
+  .header { background:linear-gradient(135deg,#2d1b4e,#0f172a); border-radius:12px; padding:28px 32px; margin-bottom:24px; border-left:4px solid #8b5cf6; }
+  .header h1 { margin:0 0 6px; font-size:22px; color:#f1f5f9; }
+  .header p { margin:0; color:#94a3b8; font-size:13px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+  .badge-green { background:#166534; color:#4ade80; }
+  .badge-red { background:#7f1d1d; color:#f87171; }
+  .badge-orange { background:#7c2d12; color:#fb923c; }
+  .badge-purple { background:#2d1b4e; color:#c084fc; }
+
+  .section { background:#1e293b; border-radius:10px; padding:20px 24px; margin-bottom:20px; }
+  .section h2 { margin:0 0 16px; font-size:15px; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; border-bottom:1px solid #334155; padding-bottom:8px; }
+
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+  .kpi-card { background:#0f172a; border-radius:8px; padding:12px; text-align:center; border-top:3px solid #3b82f6; }
+  .kpi-card.green { border-top-color:#22c55e; }
+  .kpi-card.red { border-top-color:#ef4444; }
+  .kpi-card.orange { border-top-color:#f97316; }
+  .kpi-card.gray { border-top-color:#64748b; }
+  .kpi-card.purple { border-top-color:#8b5cf6; }
+  .kpi-value { font-size:24px; font-weight:700; color:#f1f5f9; }
+  .kpi-label { font-size:11px; color:#64748b; margin-top:2px; }
+  .kpi-sub { font-size:12px; color:#94a3b8; margin-top:3px; }
+
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th { background:#0f172a; color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:9px 10px; text-align:left; }
+  td { padding:9px 10px; border-bottom:1px solid #0f172a; color:#e2e8f0; }
+  tr:hover td { background:#0f172a33; }
+  .progress-bar-bg { background:#0f172a; border-radius:4px; height:8px; width:100%; }
+  .progress-bar-fill { border-radius:4px; height:8px; }
+
+  .status-pill { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10px; font-weight:600; }
+  .status-pass { background:#166534; color:#4ade80; }
+  .status-fail { background:#7f1d1d; color:#f87171; }
+  .status-blocked { background:#7c2d12; color:#fb923c; }
+  .status-todo { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+  .status-open { background:#1e3a5f; color:#60a5fa; }
+  .status-inprogress { background:#4c1d95; color:#a78bfa; }
+
+  .priority-p1 { color:#f87171; font-weight:700; }
+  .priority-highest { color:#f87171; font-weight:700; }
+  .priority-high { color:#fb923c; font-weight:600; }
+  .priority-medium { color:#fbbf24; }
+  .priority-low { color:#94a3b8; }
+
+  .alert-row { background:#450a0a !important; }
+  .warning-row { background:#431407 !important; }
+
+  img { max-width:100%; height:auto; display:block; }
+  .chart-container { text-align:center; }
+
+  .tab-label { display:inline-block; padding:4px 12px; border-radius:6px; background:#0f172a; color:#64748b; font-size:11px; margin-right:4px; }
+  .incident-detail { background:#0f172a; border-radius:6px; padding:10px 14px; margin-bottom:8px; border-left:3px solid #334155; }
+  .incident-detail.p1 { border-left-color:#ef4444; }
+  .incident-detail.high { border-left-color:#f97316; }
+
+  .footer { text-align:center; padding:16px; color:#475569; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>&#128202; SIT Dashboard de Seguimiento &mdash; {{ report.project_key }}</h1>
+    <p>Plan: <strong>{{ report.plan_key }}</strong> &bull; Generado: {{ report.generated_at }} &bull;
+      Periodo: {{ report.plan_start }} &rarr; {{ report.plan_end }} &bull;
+      Dias restantes: <strong>{{ report.days_remaining }}</strong>
+    </p>
+    <p style="margin-top:8px;">
+      <span class="badge badge-purple">SEGUIMIENTO</span>
+      {% if report.is_on_track %}
+        <span class="badge badge-green" style="margin-left:6px;">&#10003; EN PLAZO</span>
+      {% else %}
+        <span class="badge badge-red" style="margin-left:6px;">&#9888; RETRASO {{ "%.1f"|format(report.pct_expected - report.pct_actual) }}%</span>
+      {% endif %}
+      &nbsp;
+      <span class="badge badge-orange">{{ report.all_incidents|length }} incidencias abiertas</span>
+    </p>
+  </div>
+
+  <!-- KPI GLOBALES -->
+  <div class="section">
+    <h2>Resumen Global</h2>
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-value">{{ report.total_tests }}</div>
+        <div class="kpi-label">Total</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-value">{{ report.passed }}</div>
+        <div class="kpi-label">Pasados</div>
+        <div class="kpi-sub">{{ report.pct_pass }}%</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-value">{{ report.failed }}</div>
+        <div class="kpi-label">Fallados</div>
+        <div class="kpi-sub">{{ report.pct_fail }}%</div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-value">{{ report.blocked }}</div>
+        <div class="kpi-label">Bloqueados</div>
+        <div class="kpi-sub">{{ report.pct_blocked }}%</div>
+      </div>
+      <div class="kpi-card gray">
+        <div class="kpi-value">{{ report.todo }}</div>
+        <div class="kpi-label">Sin empezar</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value">{{ report.executing }}</div>
+        <div class="kpi-label">En curso</div>
+      </div>
+      <div class="kpi-card purple">
+        <div class="kpi-value">{{ report.pct_expected }}%</div>
+        <div class="kpi-label">Esperado</div>
+      </div>
+      <div class="kpi-card {% if report.is_on_track %}green{% else %}red{% endif %}">
+        <div class="kpi-value">{{ report.pct_actual }}%</div>
+        <div class="kpi-label">Real</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POR STREAM -->
+  <div class="section">
+    <h2>Avance por Stream</h2>
+    {% if charts.streams %}
+    <div class="chart-container" style="margin-bottom:16px;">
+      <img src="data:image/png;base64,{{ charts.streams }}" alt="Streams">
+    </div>
+    {% endif %}
+    <table>
+      <thead>
+        <tr><th>Stream</th><th>Total</th><th>Pass</th><th>Fail</th><th>Bloq.</th><th>Pend.</th><th>% Completo</th><th>% Fail</th></tr>
+      </thead>
+      <tbody>
+        {% for s in report.streams %}
+        <tr {% if s.pct_fail > 20 %}class="warning-row"{% endif %}>
+          <td><strong>{{ s.name }}</strong></td>
+          <td>{{ s.total }}</td>
+          <td style="color:#22c55e;">{{ s.passed }}</td>
+          <td style="color:#ef4444;">{{ s.failed }}</td>
+          <td style="color:#f97316;">{{ s.blocked }}</td>
+          <td style="color:#94a3b8;">{{ s.pending }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="progress-bar-bg" style="width:70px;">
+                <div class="progress-bar-fill" style="width:{{ s.pct_complete }}%;background:{% if s.pct_complete>=80 %}#22c55e{% elif s.pct_complete>=50 %}#f97316{% else %}#ef4444{% endif %};"></div>
+              </div>
+              <span style="font-weight:600;">{{ s.pct_complete }}%</span>
+            </div>
+          </td>
+          <td style="color:{% if s.pct_fail > 20 %}#ef4444{% elif s.pct_fail > 10 %}#f97316{% else %}#22c55e{% endif %};">{{ s.pct_fail }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- POR EJECUTOR -->
+  <div class="section">
+    <h2>Seguimiento por Ejecutor</h2>
+    {% if charts.executor_progress %}
+    <div class="chart-container" style="margin-bottom:16px;">
+      <img src="data:image/png;base64,{{ charts.executor_progress }}" alt="Progreso por ejecutor">
+    </div>
+    {% endif %}
+    <table>
+      <thead>
+        <tr><th>Ejecutor</th><th>Asignados</th><th>Pass</th><th>Fail</th><th>Bloqueado</th><th>Pendiente</th><th>% Avance</th></tr>
+      </thead>
+      <tbody>
+        {% for e in report.executors %}
+        <tr>
+          <td><strong>{{ e.name }}</strong></td>
+          <td>{{ e.total }}</td>
+          <td style="color:#22c55e;">{{ e.passed }}</td>
+          <td style="color:#ef4444;">{{ e.failed }}</td>
+          <td style="color:#f97316;">{{ e.blocked }}</td>
+          <td style="color:#94a3b8;">{{ e.pending }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="progress-bar-bg" style="width:80px;">
+                <div class="progress-bar-fill" style="width:{{ e.pct_complete }}%;background:{% if e.pct_complete>=80 %}#22c55e{% elif e.pct_complete>=50 %}#f97316{% else %}#ef4444{% endif %};"></div>
+              </div>
+              <span style="font-weight:600;">{{ e.pct_complete }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- INCIDENCIAS COMPLETO -->
+  <div class="section">
+    <h2>&#128680; Todas las Incidencias Activas</h2>
+    {% if report.all_incidents %}
+    <table>
+      <thead>
+        <tr><th>Clave</th><th>Resumen</th><th>Prioridad</th><th>Estado</th><th>Responsable</th><th>Tests bloq.</th><th>Dias abierto</th></tr>
+      </thead>
+      <tbody>
+        {% for inc in report.all_incidents %}
+        <tr {% if inc.priority in ['P1','Highest','Critical'] %}class="alert-row"{% elif inc.days_open > 7 %}class="warning-row"{% endif %}>
+          <td><strong>{{ inc.key }}</strong></td>
+          <td>{{ inc.summary[:65] }}{% if inc.summary|length > 65 %}...{% endif %}</td>
+          <td class="priority-{{ inc.priority.lower().replace(' ','') }}">{{ inc.priority }}</td>
+          <td>
+            <span class="status-pill
+              {% if 'progress' in inc.status.lower() or 'jecuci' in inc.status.lower() %}status-inprogress
+              {% elif 'open' in inc.status.lower() or 'abierto' in inc.status.lower() %}status-open
+              {% else %}status-todo{% endif %}">
+              {{ inc.status }}
+            </span>
+          </td>
+          <td>{{ inc.assignee }}</td>
+          <td style="text-align:center;font-weight:{% if inc.linked_tests > 0 %}700{% else %}400{% endif %};color:{% if inc.linked_tests > 3 %}#ef4444{% elif inc.linked_tests > 0 %}#f97316{% else %}#64748b{% endif %};">
+            {{ inc.linked_tests }}
+          </td>
+          <td style="text-align:center;color:{% if inc.days_open > 7 %}#ef4444{% elif inc.days_open > 3 %}#f97316{% else %}#94a3b8{% endif %};">
+            {{ inc.days_open }}d
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#22c55e;text-align:center;padding:20px;">&#10003; Sin incidencias activas</p>
+    {% endif %}
+  </div>
+
+  <!-- TESTS DE INTEGRACION -->
+  {% if report.integration_tests %}
+  <div class="section">
+    <h2>Tests de Integracion</h2>
+    <table>
+      <thead>
+        <tr><th>Clave</th><th>Test</th><th>Estado</th><th>Responsable</th></tr>
+      </thead>
+      <tbody>
+        {% for t in report.integration_tests %}
+        <tr>
+          <td>{{ t.key }}</td>
+          <td>{{ t.summary[:80] }}{% if t.summary|length > 80 %}...{% endif %}</td>
+          <td>
+            <span class="status-pill
+              {% if 'pass' in t.status.lower() or 'done' in t.status.lower() %}status-pass
+              {% elif 'fail' in t.status.lower() %}status-fail
+              {% elif 'block' in t.status.lower() %}status-blocked
+              {% else %}status-todo{% endif %}">
+              {{ t.status }}
+            </span>
+          </td>
+          <td>{{ t.assignee }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    Reporte de Seguimiento SIT &bull; Generado: {{ report.generated_at }} &bull; {{ report.project_key }}
+  </div>
+</div>
+</body>
+</html>
