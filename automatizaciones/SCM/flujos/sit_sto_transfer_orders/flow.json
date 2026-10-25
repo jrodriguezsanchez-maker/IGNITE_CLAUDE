@@ -1,0 +1,20 @@
+{
+  "nombre": "Transfer orders (STO): ZTRA / ZINT / ZWIA",
+  "tipo": "sit_jira",
+  "modo": "sto",
+  "requisitos": "requisitos_sto.json",
+  "descripcion": "Escenarios del Excel SIT (Jira) con un paso ME21N y tipo ZTRA, ZINT o ZWIA. Fase 1: validar registro info, buscar lote con stock y crear el pedido de traslado y la entrega de salida.",
+  "palabras_clave": ["sto", "transfer", "traslado", "pedido", "me21n", "me23n", "ztra", "zint", "zwia", "intercompany", "intracompany", "entrega"],
+  "filtro": {},
+  "etiquetas": {"clase": "Tipo de documento", "paso": "paso ME21N", "clase_ejemplo": "ZTRA"},
+  "columnas_por_defecto": ["L3", "External ID - JIRA", "JIRA ID", "Location by Unit", "Test Scenario", "Test Step Description", "Transaction"],
+  "filtros_columnas": ["L3", "Location by Unit"],
+  "reglas": {
+    "estrategia_lote": "FEFO_FIFO",
+    "stock_insuficiente": "PARCIAL",
+    "registro_info": "PARAR_Y_AVISAR",
+    "alcance_fase_1": "STO + ENTREGA_DE_SALIDA",
+    "entorno": "SANDBOX_QAS"
+  },
+  "cantidad_por_defecto": 1
+}

@@ -16,6 +16,8 @@ from urllib.parse import urlparse, parse_qs, unquote
 import engine
 import sit_engine
 import sit_import
+import sto_engine
+import sto_import
 from xlsx_reader import read_xlsx
 
 ROOT = Path(__file__).resolve().parent.parent  # .../automatizaciones
@@ -48,7 +50,7 @@ def tree():
             runs = list((f / "results").glob("*.json"))
             flujos.append({"id": f.name, "nombre": meta.get("nombre", f.name), "descripcion": meta.get("descripcion", ""),
                            "reglas": meta.get("reglas", {}), "tipo": meta.get("tipo", "excel_filas"),
-                           "config": {k: meta[k] for k in ("filtro", "columnas_por_defecto", "filtros_columnas") if k in meta}, "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
+                           "config": {k: meta[k] for k in ("filtro", "columnas_por_defecto", "filtros_columnas", "etiquetas", "modo") if k in meta}, "ficheros": len(list((f / "data").glob("*.xlsx"))), "ejecuciones": len(runs)})
         out.append({"id": s.name, "flujos": flujos})
     return out
 
@@ -109,7 +111,8 @@ def load_catalog(d):
 
 
 def load_req(d):
-    return json.loads((d / "requisitos_movimiento.json").read_text(encoding="utf-8"))
+    nombre = json.loads((d / "flow.json").read_text(encoding="utf-8")).get("requisitos", "requisitos_movimiento.json")
+    return json.loads((d / nombre).read_text(encoding="utf-8"))
 
 
 def defaults_path(d):
@@ -129,7 +132,7 @@ def execute_sit(stream, flow, claves, run_id, cantidad):
     meta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
     path = d / "results" / (run_id + ".json")
     log_lines = []
-    run = {"id": run_id, "stream": stream, "flujo": flow, "tipo": "sit", "fichero": "%d escenario(s) SIT" % len(claves),
+    run = {"id": run_id, "stream": stream, "flujo": flow, "tipo": "sit", "modo": meta.get("modo", "migo"), "fichero": "%d escenario(s) SIT" % len(claves),
            "inicio": time.strftime("%Y-%m-%d %H:%M:%S"), "simulado": True, "estado": "EN_CURSO", "resumen": {}, "log": log_lines}
 
     def log(nivel, msg):
@@ -143,7 +146,8 @@ def execute_sit(stream, flow, claves, run_id, cantidad):
         log("INFO", "Modo SIMULADO: no se conecta a SAP. IDoc/EDI fuera de alcance.")
         sel = [e for e in load_catalog(d) if e["clave"] in set(claves)]
         log("INFO", "Cantidad por defecto: %s" % cantidad)
-        out, run["resumen"] = sit_engine.ejecutar(sel, engine.MockSap(), log, cantidad, load_req(d), load_defaults(d))
+        motor = sto_engine if meta.get("modo") == "sto" else sit_engine
+        out, run["resumen"] = motor.ejecutar(sel, engine.MockSap(), log, cantidad, load_req(d), load_defaults(d))
         run.update(out)
         run["estado"] = "FINALIZADA"
     except Exception as e:
@@ -315,8 +319,12 @@ class Handler(BaseHTTPRequestHandler):
             name = data.get("file", "")
             if not SAFE_FILE.match(name) or not (d / "data" / name).exists():
                 raise FileNotFoundError("Fichero no encontrado")
-            filtro = json.loads((d / "flow.json").read_text(encoding="utf-8")).get("filtro")
-            nuevo, stats = sit_import.importar(d / "data" / name, d / "reglas_movimiento.json", filtro)
+            fmeta = json.loads((d / "flow.json").read_text(encoding="utf-8"))
+            filtro = fmeta.get("filtro")
+            if fmeta.get("modo") == "sto":
+                nuevo, stats = sto_import.importar_sto(d / "data" / name, filtro)
+            else:
+                nuevo, stats = sit_import.importar(d / "data" / name, d / "reglas_movimiento.json", filtro)
             stats.update({"fichero": name, "fecha": time.strftime("%Y-%m-%d %H:%M")})
             (d / "data" / "catalogo_meta.json").write_text(json.dumps(stats, ensure_ascii=False), encoding="utf-8")
             previo = {e["clave"]: e for e in load_catalog(d)}
@@ -334,7 +342,7 @@ class Handler(BaseHTTPRequestHandler):
             idx = {e["clave"]: e for e in cat}
             for it in data.get("items", []):
                 mov = str(it.get("mov", "")).strip().upper()
-                if it.get("clave") in idx and re.match(r"^[0-9A-Z]{3}$", mov):
+                if it.get("clave") in idx and re.match(r"^[0-9A-Z]{3,4}$", mov):
                     idx[it["clave"]]["mov"], idx[it["clave"]]["confirmado"] = mov, True
             catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
             return self._send(200, {"ok": True, "confirmados": sum(1 for e in cat if e["confirmado"])})

@@ -160,7 +160,7 @@ def resolver(e, mov, req_cfg, defaults, cantidad_global):
             continue
         if poner(f, a.get(f), "aportado") or poner(f, i.get(f), "excel"):
             continue
-        if f == "centro_destino" and vals.get("centro"):
+        if f == "centro_destino" and vals.get("centro") and req_cfg.get("derivar_centro_destino", True):
             poner(f, vals["centro"], "= origen")
         elif f == "alm_destino" and req.get("alm_destino_igual_origen") and vals.get("alm_origen"):
             poner(f, vals["alm_origen"], "= origen")

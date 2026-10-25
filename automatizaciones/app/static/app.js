@@ -36,6 +36,8 @@ async function api(path, opts) {
 }
 const post = (path, body) => api(path, { method: "POST", headers: JSONH, body: JSON.stringify(body) });
 const q = () => `stream=${sel.stream}&flow=${sel.flow}`;
+const etq = () => ((sel && sel.meta.config) || {}).etiquetas || { clase: "Movimiento SAP", paso: "paso 1: MIGO", clase_ejemplo: "311" };
+const esSto = () => ((sel && sel.meta.config) || {}).modo === "sto";
 const isSit = () => sel && sel.meta.tipo === "sit_jira";
 
 // ---------- pestañas ----------
@@ -213,7 +215,7 @@ function renderScope() {
   const fuera = Object.entries(cmeta.excluidos || {});
   box.textContent = `Alcance: ${alc} → ${catalog.length} escenarios. `;
   if (fuera.length) box.append(h("span", { title: fuera.map(([k, v]) => `${k}: ${v}`).join("\n") },
-    `Hay ${cmeta.total_migo - cmeta.incluidos} más con MIGO en el paso 1 fuera de alcance (pasa el ratón para ver cuáles).`));
+    `Hay ${fuera.reduce((a, [, v]) => a + v, 0)} más fuera de alcance (pasa el ratón para ver cuáles).`));
 }
 
 function buildFilters(cols) {
@@ -244,15 +246,15 @@ function resolve(e, mov) {
   for (const f of Object.keys(reqCfg.campos)) {
     if (f === "material") { const m = (a.material || "").split(/[,\s;]+/).filter(Boolean); put(f, m.length ? m : i.materiales, m.length ? "aportado" : "excel"); continue; }
     if (put(f, a[f], "aportado") || put(f, i[f], "excel")) continue;
-    if (f === "centro_destino" && vals.centro) put(f, vals.centro, "= origen");
+    if (f === "centro_destino" && vals.centro && reqCfg.derivar_centro_destino !== false) put(f, vals.centro, "= origen");
     else if (f === "alm_destino" && req.alm_destino_igual_origen && vals.alm_origen) put(f, vals.alm_origen, "= origen");
     else if (!put(f, d[f], "centro") && f === "cantidad") put(f, String(qtyGlobal()), "global");
   }
   return { req, vals, src, faltan: req.requiere.filter((f) => !vals[f]) };
 }
 const lab = (f) => reqCfg.campos[f] || f;
-const movOf = (e) => movIn[e.clave] ?? (e.confirmado ? e.mov : (e.movs_candidatos[0] || ""));
-const movOk = (m) => /^[0-9A-Z]{3}$/.test(m);
+const movOf = (e) => movIn[e.clave] ?? (e.confirmado ? e.mov : (e.mov_ambiguo ? "" : (e.movs_candidatos[0] || "")));
+const movOk = (m) => /^[0-9A-Z]{3,4}$/.test(m);
 
 function visible() {
   const t = $("sitQ").value.toLowerCase(), est = $("sitEst").value;
@@ -276,6 +278,10 @@ function interpretadoCell(e) {
     box.append(h("div", {}, h("span", { class: "muted" }, lab(f) + ": "),
       v ? h("b", {}, Array.isArray(v) ? (v.length > 2 ? `${v[0]}, ${v[1]} (+${v.length - 2})` : v.join(", ")) : v) : chip("ERROR", "FALTA"),
       v && r.src[f] !== "excel" ? h("span", { class: "muted" }, ` (${r.src[f]})`) : ""));
+  }
+  for (const f of r.req.opcionales || []) {
+    const v = r.vals[f];
+    if (v) box.append(h("div", { class: "muted" }, lab(f) + " (opcional): " + (Array.isArray(v) ? v.join(", ") : v)));
   }
   return box;
 }
@@ -302,7 +308,7 @@ function detailRow(e, span) {
   const mov = movOf(e);
   const r = resolve(e, mov);
   const inputs = {};
-  const form = h("div", {}, h("h3", { style: "margin-top:0" }, `Datos para el movimiento ${mov || "—"}${r.req.nombre ? " · " + r.req.nombre : ""}`));
+  const form = h("div", {}, h("h3", { style: "margin-top:0" }, `Datos para ${etq().clase.toLowerCase()} ${mov || "—"}${r.req.nombre ? " · " + r.req.nombre : ""}`));
   if (r.req.desconocido) form.append(h("div", {}, chip("WARN", "Aviso"), " " + r.req.nota));
   if (r.req.transaccion) form.append(h("div", {}, chip("ERROR", "No soportado"), " " + r.req.nota));
   else if (r.req.nota) form.append(h("div", { class: "muted" }, r.req.nota));
@@ -320,11 +326,12 @@ function detailRow(e, span) {
       `Guardar como valor del centro ${e.interpretado.centro || "—"}`)));
   form.append(h("div", { class: "muted", style: "margin-top:6px" }, e.mov_origen + (e.mov_nota ? " · " + e.mov_nota : "")),
     ...avisos(e).map((a) => h("div", {}, chip("WARN", "Aviso"), " " + a)),
-    h("h3", {}, "Datos del Excel (paso 1)"), h("pre", {}, e.fila1["Data"] || ""),
+    h("h3", {}, `Datos del Excel (${etq().paso})`), h("pre", {}, e.fila1["Data"] || ""),
     h("h3", {}, "Resultado esperado"), h("pre", {}, e.fila1["Expected result"] || ""));
-  const right = h("div", {}, h("h3", { style: "margin-top:0" }, `Pasos siguientes: se entregan para validar (${e.pasos.length})`),
+  const FASE = { previo: ["WARN", "previo, no se automatiza"], sto: ["OK", "se ejecuta: STO"], entrega: ["OK", "se ejecuta: entrega"], posterior: ["INFO", "se entrega para validar"] };
+  const right = h("div", {}, h("h3", { style: "margin-top:0" }, esSto() ? `Pasos del escenario (${e.pasos.length})` : `Pasos siguientes: se entregan para validar (${e.pasos.length})`),
     ...e.pasos.map((p) => h("div", { style: "margin-bottom:6px" }, h("b", {}, `Paso ${p.paso} · ${p.transacciones.join(" / ")} `),
-      chip("INFO", p.categorias.join(", ")), h("div", { class: "muted" }, p.descripcion.slice(0, 220)))));
+      p.fase ? chip(FASE[p.fase][0], FASE[p.fase][1]) : chip("INFO", p.categorias.join(", ")), h("div", { class: "muted" }, p.descripcion.slice(0, 220)))));
   return h("tr", { class: "det" }, h("td", { colspan: String(span) }, h("div", { class: "grid2" }, form, right)));
 }
 
@@ -333,7 +340,7 @@ function renderSit() {
   const tb = clear($("sitTable"));
   const span = visCols.length + 5;
   tb.append(h("tr", {}, h("th", {}, ""), h("th", {}, ""), ...visCols.map((c) => h("th", {}, c)),
-    h("th", { class: "app" }, "Datos interpretados"), h("th", { class: "app" }, "Movimiento SAP"), h("th", { class: "app" }, "Avisos")));
+    h("th", { class: "app" }, "Datos interpretados"), h("th", { class: "app" }, etq().clase), h("th", { class: "app" }, "Avisos")));
   for (const e of vis) {
     const cb = h("input", { type: "checkbox" });
     cb.checked = picked.has(e.clave);
@@ -341,7 +348,7 @@ function renderSit() {
     const isOpen = open.has(e.clave);
     const tog = h("button", { class: "sec", style: "padding:1px 7px", title: "Ver detalle y completar datos",
       onclick: () => { isOpen ? open.delete(e.clave) : open.add(e.clave); renderSit(); } }, isOpen ? "▾" : "▸");
-    const inp = h("input", { type: "text", maxlength: "3", style: "width:54px;text-align:center" });
+    const inp = h("input", { type: "text", maxlength: "4", style: "width:62px;text-align:center" });
     inp.value = movOf(e);
     inp.title = e.movs_candidatos.length ? "Propuesta: " + e.movs_candidatos.join(", ") : "Sin propuesta: indícalo tú";
     inp.addEventListener("change", () => { movIn[e.clave] = inp.value.toUpperCase(); renderSit(); });
@@ -375,7 +382,7 @@ $("qty").addEventListener("change", renderSit);
 $("btnRunSit").addEventListener("click", async () => {
   const items = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
   const malos = items.filter((i) => !movOk(i.mov));
-  if (malos.length) return note($("sitOut"), `Falta un tipo de movimiento válido (3 caracteres, p. ej. 311) en ${malos.length} escenario(s): ` +
+  if (malos.length) return note($("sitOut"), `Falta indicar ${etq().clase.toLowerCase()} (p. ej. ${etq().clase_ejemplo}) en ${malos.length} escenario(s): ` +
     malos.slice(0, 8).map((i) => i.e.fila1["JIRA ID"]).join(", ") + (malos.length > 8 ? "…" : ""), true);
   const rs = items.map((i) => resolve(i.e, i.mov));
   const noSop = rs.filter((r) => r.req.transaccion).length;
@@ -383,9 +390,9 @@ $("btnRunSit").addEventListener("click", async () => {
   const resumen = {};
   items.forEach((i) => { resumen[i.mov] = (resumen[i.mov] || 0) + 1; });
   const txt = `Vas a lanzar ${items.length} escenario(s) en modo SIMULADO (no se conecta a SAP).\n\n` +
-    `Movimientos: ${Object.entries(resumen).map(([m, n]) => `${m} × ${n}`).join(", ")}\nCantidad por defecto: ${qtyGlobal()}\n` +
+    `${etq().clase}: ${Object.entries(resumen).map(([m, n]) => `${m} × ${n}`).join(", ")}\nCantidad por defecto: ${qtyGlobal()}\n` +
     (falta ? `${falta} tienen datos pendientes y no se ejecutarán (FALTAN DATOS).\n` : "") +
-    (noSop ? `${noSop} no se hacen con MIGO (NO SOPORTADO).\n` : "") + `\n¿Confirmas estos movimientos y lanzas?`;
+    (noSop ? `${noSop} no se hacen con MIGO (NO SOPORTADO).\n` : "") + (esSto() ? "\nFase 1: se valida registro info, se busca lote con stock y se crean el STO y la entrega de salida." : "") + `\n¿Confirmas y lanzas?`;
   if (!window.confirm(txt)) return;
   try {
     await post("/api/sit/confirm", { stream: sel.stream, flow: sel.flow, items: items.map((i) => ({ clave: i.e.clave, mov: i.mov })) });
@@ -405,12 +412,12 @@ async function loadRuns() {
   $("runsTitle").textContent = all || !sel ? "Ejecuciones de todos los flujos" : "Ejecuciones de este flujo";
   const box = clear($("runs"));
   if (!runs.length) return void (box.textContent = "Sin ejecuciones todavía.");
-  const tb = h("table", {}, h("tr", {}, ["Inicio", "Flujo", "Origen", "Estado", "OK", "Parcial", "Sin stock", "Error", "Faltan datos", "No soportado"].map((x) => h("th", {}, x))));
+  const tb = h("table", {}, h("tr", {}, ["Inicio", "Flujo", "Origen", "Estado", "OK", "Parcial", "Sin stock", "Error", "Faltan datos", "Sin reg. info", "No soportado"].map((x) => h("th", {}, x))));
   for (const r of runs) {
     const s = r.resumen || {};
     tb.append(h("tr", { style: "cursor:pointer", onclick: () => openRun(r.id) }, h("td", {}, r.inicio), h("td", {}, r.flujo), h("td", {}, r.fichero),
       h("td", {}, chip(r.estado), r.simulado ? " simulado" : ""), h("td", {}, s.OK ?? ""), h("td", {}, s.PARCIAL ?? ""),
-      h("td", {}, s.SIN_STOCK ?? ""), h("td", {}, s.ERROR ?? ""), h("td", {}, s.FALTAN_DATOS ?? ""), h("td", {}, s.NO_SOPORTADO ?? "")));
+      h("td", {}, s.SIN_STOCK ?? ""), h("td", {}, s.ERROR ?? ""), h("td", {}, s.FALTAN_DATOS ?? ""), h("td", {}, s.SIN_REGISTRO_INFO ?? ""), h("td", {}, s.NO_SOPORTADO ?? "")));
   }
   box.append(tb);
 }
@@ -424,10 +431,17 @@ const TABS_SIT = {
   ml: ["ML · Valoración", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["doc_material", "Doc. material"], ["material", "Material"], ["centro", "Centro"], ["control_precio", "Ctrl. precio"], ["precio", "Precio"], ["cantidad", "Cantidad"], ["valor", "Valor"], ["diferencia_precio", "Dif. precio"], ["moneda", "Moneda"]]],
   pasos: ["Pasos a validar", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["paso", "Paso"], ["equipo", "Equipo"], ["transacciones", "Transacciones"], ["descripcion", "Descripción"], ["esperado", "Resultado esperado"]]],
 };
+const TABS_STO = {
+  escenarios: ["Escenarios", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["unidad", "Location by Unit"], ["escenario", "Test Scenario"], ["mov", "Tipo doc."], ["estado", "Estado"], ["sto", "STO"], ["entrega", "Entrega"], ["detalle", "Detalle"]]],
+  sto: ["STO creados", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["sto", "STO"], ["tipo", "Tipo"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["wm", "WM"], ["centro_receptor", "Centro receptor"], ["alm_receptor", "Alm. receptor"], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["registro_info", "Registro info"], ["org_compras", "Org. compras"], ["grupo_compras", "Grupo compras"], ["sociedad", "Sociedad"], ["incoterms", "Incoterms"], ["fuente_stock", "Stock desde"]]],
+  entregas: ["Entregas de salida", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["entrega", "Entrega"], ["sto", "STO"], ["centro_suministrador", "Centro sumin."], ["alm_suministrador", "Alm. sumin."], ["material", "Material"], ["lote", "Lote"], ["cantidad", "Cantidad"], ["wm", "WM"]]],
+  pasos: ["Pasos del escenario", [["jira_id", "JIRA ID"], ["id_jira_unidad", "External ID - JIRA"], ["paso", "Paso"], ["fase", "Fase"], ["equipo", "Equipo"], ["transacciones", "Transacciones"], ["descripcion", "Descripción"], ["esperado", "Resultado esperado"]]],
+};
+const tabsDe = (r) => (r.tipo === "sit" ? (r.modo === "sto" ? TABS_STO : TABS_SIT) : TABS_ROWS);
 const TABS_ROWS = { filas: ["Filas", [["fila", "Fila"], ["tipo_mov", "Mov."], ["material", "Material"], ["centro", "Centro"], ["almacen", "Almacén"], ["pedida", "Pedida"], ["movida", "Movida"], ["estado", "Estado"], ["detalle", "Detalle"], ["docs", "Documentos"]]] };
 
 function showTab(key) {
-  const defs = curRun.tipo === "sit" ? TABS_SIT : TABS_ROWS;
+  const defs = tabsDe(curRun);
   curTab = key;
   const cols = defs[key][1];
   let data = curRun[key] || [];
@@ -449,9 +463,9 @@ async function openRun(id) {
   $("detTitle").textContent = `Ejecución ${r.id} · ${r.fichero}${r.simulado ? " · SIMULADA" : ""}`;
   const cards = clear($("detSum"));
   cards.append(h("div", { class: "kpi" }, "Estado", h("b", {}, r.estado.replace("_", " "))));
-  for (const k of ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "NO_SOPORTADO"])
-    if (r.tipo === "sit" || !["FALTAN_DATOS", "NO_SOPORTADO"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace("_", " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
-  showTab(r.tipo === "sit" ? (curTab in TABS_SIT ? curTab : "escenarios") : "filas");
+  for (const k of ["OK", "PARCIAL", "SIN_STOCK", "ERROR", "FALTAN_DATOS", "SIN_REGISTRO_INFO", "NO_SOPORTADO"])
+    if (k in (r.resumen || {}) || ["OK", "PARCIAL", "SIN_STOCK", "ERROR"].includes(k)) cards.append(h("div", { class: "kpi" }, k.replace("_", " "), h("b", {}, (r.resumen || {})[k] ?? 0)));
+  showTab(r.tipo === "sit" ? (curTab in tabsDe(r) ? curTab : "escenarios") : "filas");
   $("detLog").textContent = r.log.map((l) => `${l.t} [${l.nivel}] ${l.msg}`).join("\n");
   if (r.estado === "EN_CURSO") poll = setTimeout(() => openRun(id), 800);
   else { loadRuns(); loadTree(); }
@@ -464,7 +478,7 @@ function csvCell(v) {
 }
 $("btnCsv").addEventListener("click", () => {
   if (!curRun) return;
-  const cols = (curRun.tipo === "sit" ? TABS_SIT : TABS_ROWS)[curTab][1];
+  const cols = tabsDe(curRun)[curTab][1];
   const lines = [cols.map(([, t]) => csvCell(t)).join(";")].concat(curRows.map((r) => cols.map(([k]) => csvCell(r[k])).join(";")));
   h("a", { href: URL.createObjectURL(new Blob(["﻿" + lines.join("\n")], { type: "text/csv" })), download: `${curRun.id}_${curTab}.csv` }).click();
 });

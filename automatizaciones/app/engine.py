@@ -71,6 +71,21 @@ class MockSap(SapBackend):
     def migo(self, tipo_mov, material, centro, almacen, lote, cantidad, um, destino, extra=None):
         return "SIM-%010d" % (self._h(tipo_mov, material, lote, cantidad) % 10**10)
 
+    # --- Pedido de traslado (STO) y entrega de salida (en SAP real: ME13, MB52/LS24, ME21N, VL01N) ---
+    def registro_info(self, material, centro_suministrador, org_compras):
+        return self._h(material, centro_suministrador, org_compras, "info") % 6 != 0
+
+    def stock_origen(self, material, centro, almacen, wm):
+        s = self.mb52(material, centro, almacen)
+        s["fuente"] = "WM (LS24/LX02)" if wm else "MB52"
+        return s
+
+    def crear_sto(self, tipo, centro, centro_destino, org_compras, sociedad, items):
+        return "SIM-PO-%010d" % (self._h(tipo, centro, centro_destino, str(items)) % 10**10)
+
+    def crear_entrega(self, sto, items):
+        return "SIM-DL-%010d" % (self._h(sto, "entrega") % 10**10)
+
     # --- Apuntes derivados del documento de material (en SAP real: FB03, KE24, CKM3N) ---
     def apuntes_fi(self, doc, material, centro, cantidad):
         h = self._h(doc, "fi")
