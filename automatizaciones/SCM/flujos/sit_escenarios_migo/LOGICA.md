@@ -66,3 +66,12 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
 - **Lote:** el chequeo devuelve los lotes en orden FEFO/FIFO y cómo se cubriría la cantidad (p. ej. «A × 600 + B × 400»). En el detalle del escenario hay un campo
   **Lote (opcional)** rellenado con esa propuesta y **editable**: lo que escribas manda (si el material es único; se guarda al salir del campo). Con SAP real se usa ese
   lote; con el motor simulado se ignora para no mezclar lotes reales con stock inventado. El lote también aparece en la tabla y en el plan «Qué haría en SAP».
+
+## MIGO real (en preparación)
+- Módulo `sap_migo.py`: traspasos 344/343 con modos «comprobar» (Check de MIGO, no contabiliza) y «contabilizar». Candados: solo movimientos 343/344, cantidad máxima,
+  sistema/mandante permitidos y una **huella** calculada con los datos exactos (movimiento, material, centro, almacén, lote, cantidad **y motivo**) que el usuario confirma.
+- QS4 exige el **motivo del movimiento** en el 344 (error del Check «Enter Reason for Movement» si falta). Va en la pestaña «Where» de MIGO (`GOITEM-GRUND`).
+  En la pantalla es un desplegable con los motivos válidos de cada movimiento (lista facilitada por el usuario, guardada en `data/motivos_movimiento.json`, fuera de git).
+- Lote: campo `GODYNPRO-CHARG` de la pestaña «Transfer Posting». El registro de mensajes del Check («Display logs») se lee: si tiene errores se aborta; si no, se cierra con Continue.
+- Probado (Check, sin contabilizar): 344 · 108210 · L056/1000 · lote 73994721 · 1 KG · motivo 0046 → «Document is O.K.».
+- Verificación posterior prevista: anotar el nº de documento de material, leerlo (MB51/MB03), comprobar movimiento, cantidad, lote y stock con MB52, y de ahí obtener los apuntes FI, CO y ML.

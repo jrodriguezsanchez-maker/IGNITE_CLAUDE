@@ -119,9 +119,11 @@
         "centro",
         "alm_origen",
         "material",
-        "cantidad"
+        "cantidad",
+        "motivo"
       ],
-      "alm_destino_igual_origen": true
+      "alm_destino_igual_origen": true,
+      "nota": "QS4 pide el motivo del movimiento en MIGO (confirmado con el 344 en el Check; en el 343 se asume igual)."
     },
     "344": {
       "nombre": "Libre utilización a bloqueado",
@@ -129,9 +131,11 @@
         "centro",
         "alm_origen",
         "material",
-        "cantidad"
+        "cantidad",
+        "motivo"
       ],
-      "alm_destino_igual_origen": true
+      "alm_destino_igual_origen": true,
+      "nota": "QS4 pide el motivo del movimiento en MIGO (confirmado con el 344 en el Check; en el 343 se asume igual)."
     },
     "541": {
       "nombre": "Traslado a stock de subcontratista",

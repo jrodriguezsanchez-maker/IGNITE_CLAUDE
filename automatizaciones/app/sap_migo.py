@@ -28,9 +28,9 @@ class MigoError(sap_mb52.SapError):
     pass
 
 
-def huella(mov, material, centro, almacen, lote, cantidad):
+def huella(mov, material, centro, almacen, lote, cantidad, motivo=""):
     """Código que identifica los datos exactos. Cambia si cambia cualquiera de ellos."""
-    txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, cantidad))
+    txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, cantidad, motivo))
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()[:8].upper()
 
 
@@ -58,6 +58,28 @@ def _buscar(raiz, tipo, sufijo):
     return None
 
 
+def _editables(raiz, maximo=40):
+    """Ids cortos de los campos editables visibles (para explicar un fallo sin adivinar)."""
+    res = []
+
+    def rec(o):
+        try:
+            hs = o.Children
+            for i in range(hs.Count):
+                if len(res) >= maximo:
+                    return
+                h = hs.Item(i)
+                t = _attr(h, "Type")
+                if t in ("GuiTextField", "GuiCTextField") and _attr(h, "Changeable", True):
+                    res.append(str(_attr(h, "Id")).split("/")[-1])
+                if t in CONTENEDORES or _attr(h, "ContainerType", False):
+                    rec(h)
+        except Exception:
+            pass
+    rec(raiz)
+    return ", ".join(res)
+
+
 def _boton_barra(ses, textos):
     for barra in ("wnd[0]/tbar[1]", "wnd[0]/tbar[0]"):
         try:
@@ -72,6 +94,36 @@ def _boton_barra(ses, textos):
     return None
 
 
+def _texto_ventana(ses, nivel=1, max_filas=25):
+    """Lee (sin pulsar nada) el contenido de la ventana emergente: etiquetas, tablas ALV y botones disponibles."""
+    try:
+        w = ses.findById("wnd[%d]" % nivel)
+    except Exception:
+        return "(no se pudo leer la ventana)"
+    partes = ["título «%s»" % str(_attr(w, "Text")).strip()]
+
+    def rec(o):
+        try:
+            hs = o.Children
+            for i in range(hs.Count):
+                h = hs.Item(i)
+                t = _attr(h, "Type")
+                if t == "GuiLabel" and str(_attr(h, "Text")).strip():
+                    partes.append("texto: " + str(_attr(h, "Text")).strip())
+                elif t == "GuiShell" and _attr(h, "SubType") == "GridView":
+                    cols = [h.ColumnOrder.Item(k) for k in range(h.ColumnOrder.Count)]
+                    for r in range(min(h.RowCount, max_filas)):
+                        partes.append("fila %d: " % r + " | ".join(str(h.GetCellValue(r, c)).strip() for c in cols if str(h.GetCellValue(r, c)).strip()))
+                elif t == "GuiButton" and (str(_attr(h, "Text")).strip() or str(_attr(h, "Tooltip")).strip()):
+                    partes.append("botón %s: %s" % (str(_attr(h, "Id")).split("/")[-1], str(_attr(h, "Text") or _attr(h, "Tooltip")).strip()))
+                if t in CONTENEDORES or _attr(h, "ContainerType", False):
+                    rec(h)
+        except Exception:
+            pass
+    rec(w)
+    return " · ".join(partes)
+
+
 def _esperar(ses, seg=60):
     t0 = time.time()
     while ses.Busy and time.time() - t0 < seg:
@@ -83,7 +135,7 @@ def _mensaje(ses):
     return str(sb.Text).strip(), str(sb.MessageType)
 
 
-def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None):
+def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo=""):
     """Prepara (y opcionalmente contabiliza) un traspaso en MIGO. Devuelve un dict con el resultado."""
     mov, cantidad = str(mov).strip().upper(), cantidad
     if mov not in MOVIMIENTOS_PERMITIDOS:
@@ -96,13 +148,13 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         raise MigoError("Cantidad fuera de rango (máximo %s)." % MAX_CANTIDAD)
     if modo not in ("comprobar", "contabilizar"):
         raise MigoError("Modo no válido.")
-    esperada = huella(mov, material, centro, almacen, lote, cantidad)
+    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo)
     if modo == "contabilizar" and (clave or "").upper() != esperada:
         raise MigoError("La huella no coincide con los datos: el usuario no ha confirmado estos datos exactos. No se contabiliza.")
     if str(ses.Info.Transaction) != "SESSION_MANAGER" or ses.Children.Count > 1:
         raise MigoError("La sesión no está libre (pantalla inicial, sin ventanas emergentes).")
 
-    res = {"modo": modo, "huella": esperada, "check": "", "documento": "", "mensaje": "", "tipo_mensaje": ""}
+    res = {"modo": modo, "huella": esperada, "check": "", "documento": "", "mensaje": "", "tipo_mensaje": "", "registro": ""}
 
     def ir(cmd):
         ses.findById("wnd[0]/tbar[0]/okcd").text = cmd
@@ -111,7 +163,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
 
     def sin_popup(donde):
         if ses.Children.Count > 1:
-            raise MigoError("Ventana emergente inesperada %s: %s. No se pulsa nada." % (donde, str(_attr(ses.findById("wnd[1]"), "Text")).strip()))
+            raise MigoError("Ventana emergente inesperada %s. No se pulsa nada. Contenido: %s" % (donde, _texto_ventana(ses)))
 
     ir("/nMIGO")
     try:
@@ -132,32 +184,51 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         _esperar(ses)
         sin_popup("al fijar el movimiento")
 
-        tabla = "tblSAPLMIGOTV_GOITEM"
-        def celda(prefijo, col):
-            c = _buscar(usr(), "GuiCTextField", "%s[%d,0]" % (prefijo, col)) or _buscar(usr(), "GuiTextField", "%s[%d,0]" % (prefijo, col))
+        # Al fijar el movimiento MIGO abre el panel de detalle de la primera posición: ahí se teclean los datos.
+        def campo(sufijo):
+            c = _buscar(usr(), "GuiCTextField", sufijo) or _buscar(usr(), "GuiTextField", sufijo)
             if c is None:
-                raise MigoError("No encuentro la columna %s de la tabla de posiciones." % prefijo)
+                raise MigoError("No encuentro el campo %s en el detalle de la posición. Campos editables visibles: %s" % (sufijo, _editables(usr())))
             return c
-        celda("GOITEM-MAKTX", 1).text = str(material)                                       # material
-        ses.findById("wnd[0]").sendVKey(0)
-        _esperar(ses)
-        sin_popup("al introducir el material")
-        celda("GOITEM-NAME1", 8).text = str(centro)                                        # centro
-        celda("GOITEM-LGOBE", 5).text = str(almacen)                                       # almacén
-        ses.findById("wnd[0]").sendVKey(0)
-        _esperar(ses)
-        sin_popup("al introducir centro y almacén")
-        celda("GOITEM-ERFMG", 3).text = str(cantidad).replace(".", ",") if "," not in str(cantidad) and "." in str(cantidad) else str(cantidad)
-        if um:
-            celda("GOITEM-ERFME", 4).text = str(um)
+
+        def intro(donde):
+            ses.findById("wnd[0]").sendVKey(0)
+            _esperar(ses)
+            sin_popup(donde)
+
+        campo("GODYNPRO-MAKTX").text = str(material)                                        # material
+        intro("al introducir el material")
+        campo("GODYNPRO-NAME1").text = str(centro)                                          # centro
+        campo("GODYNPRO-LGOBE").text = str(almacen)                                         # almacén
+        intro("al introducir centro y almacén")
         if lote:
-            c = _buscar(usr(), "GuiCTextField", "GOITEM-CHARG") or _buscar(usr(), "GuiCTextField", "GODYNPRO-CHARG") or _buscar(usr(), "GuiTextField", "GOITEM-CHARG")
+            c = None
+            for suf in ("GOITEM-CHARG", "GODYNPRO-CHARG"):
+                c = _buscar(usr(), "GuiCTextField", suf) or _buscar(usr(), "GuiTextField", suf)
+                if c is not None:
+                    break
+            if c is None:                                   # puede estar en otra pestaña del detalle («Where»)
+                for tab in ("tabpOK_GOITEM_DESTINAT.", "tabpOK_GOITEM_MATERIAL", "tabpOK_GOITEM_QUANTITIES"):
+                    t = _buscar(usr(), "GuiTab", tab)
+                    if t is not None:
+                        t.select()
+                        _esperar(ses, 20)
+                        c = _buscar(usr(), "GuiCTextField", "CHARG") or _buscar(usr(), "GuiTextField", "CHARG")
+                        if c is not None:
+                            break
             if c is None:
-                raise MigoError("No encuentro el campo de lote (¿el material no gestiona lotes?).")
+                raise MigoError("No encuentro el campo de lote (¿el material no gestiona lotes?). Campos editables visibles: %s" % _editables(usr()))
             c.text = str(lote)
-        ses.findById("wnd[0]").sendVKey(0)
-        _esperar(ses)
-        sin_popup("al introducir cantidad y lote")
+        campo("GODYNPRO-ERFMG").text = str(cantidad)                                        # cantidad
+        intro("al introducir cantidad y lote")
+        if motivo:                                                                          # motivo del movimiento: pestaña «Where»
+            t = _buscar(usr(), "GuiTab", "tabpOK_GOITEM_DESTINAT.")
+            if t is None:
+                raise MigoError("No encuentro la pestaña «Where» del detalle de la posición (aquí va el motivo).")
+            t.select()
+            _esperar(ses, 20)
+            campo("GOITEM-GRUND").text = str(motivo)
+            intro("al introducir el motivo")
         ok = _buscar(usr(), "GuiCheckBox", "DETAIL_TAKE")                                    # «Item OK»
         if ok is not None and not ok.selected:
             ok.selected = True
@@ -168,6 +239,18 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
             raise MigoError("No encuentro el botón Check de MIGO.")
         chk.press()
         _esperar(ses)
+        if ses.Children.Count > 1 and "log" in str(_attr(ses.findById("wnd[1]"), "Text")).lower():
+            # «Display logs»: registro de mensajes del Check. Se lee, y solo si no hay errores se cierra con Continue.
+            res["registro"] = _texto_ventana(ses)
+            b = _buscar(ses.findById("wnd[1]"), "GuiButton", "btn[17]")                    # contador de errores
+            try:
+                errores = int(str(_attr(b, "Text", "0")).strip() or 0) if b is not None else 0
+            except ValueError:
+                errores = 0
+            if errores > 0:
+                raise MigoError("El Check de MIGO da %d error(es). Registro: %s" % (errores, res["registro"]))
+            ses.findById("wnd[1]/tbar[0]/btn[0]").press()                                  # Continue
+            _esperar(ses)
         sin_popup("tras el Check")
         res["check"], res["tipo_mensaje"] = _mensaje(ses)
         res["mensaje"] = res["check"]

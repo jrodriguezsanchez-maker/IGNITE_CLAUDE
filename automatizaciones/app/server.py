@@ -122,6 +122,12 @@ def defaults_path(d):
     return d / "data" / "valores_centro.json"
 
 
+def load_motivos(d):
+    """Motivos de movimiento válidos por clase de movimiento (datos de configuración del cliente: solo en data/, fuera de git)."""
+    p = d / "data" / "motivos_movimiento.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
 def load_defaults(d):
     p = defaults_path(d)
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
@@ -282,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
             d = flow_dir(q.get("stream", ""), q.get("flow", ""))
             mp = d / "data" / "catalogo_meta.json"
             return self._send(200, {"meta": json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}, "escenarios": load_catalog(d),
-                                    "requisitos": load_req(d), "defaults": load_defaults(d),
+                                    "requisitos": load_req(d), "defaults": load_defaults(d), "motivos": load_motivos(d),
                                     "cantidad_por_defecto": json.loads((d / "flow.json").read_text(encoding="utf-8")).get("cantidad_por_defecto", 1)})
         if u.path == "/api/runs":
             return self._send(200, list_runs())

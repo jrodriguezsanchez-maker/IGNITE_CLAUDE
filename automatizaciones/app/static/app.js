@@ -6,7 +6,7 @@ const JSONH = { "Content-Type": "application/json" };
 let sel = null;               // {stream, flow, meta}
 let files = [];
 let catalog = [], cmeta = {}; // escenarios SIT y datos de la importación
-let reqCfg = null, defaults = {}, qty0 = 1;
+let reqCfg = null, defaults = {}, qty0 = 1, motivos = {};
 let modoSap = false;
 const chk = {};
 const chkDet = {};        // clave -> detalle del último chequeo (lotes, stock…)           // clave -> estado del último chequeo
@@ -187,7 +187,7 @@ function selectProposed(claves) {
 async function loadCatalog() {
   const r = await api(`/api/sit/catalog?${q()}`);
   catalog = r.escenarios; cmeta = r.meta || {};
-  reqCfg = r.requisitos; defaults = r.defaults || {}; qty0 = r.cantidad_por_defecto || 1;
+  reqCfg = r.requisitos; defaults = r.defaults || {}; motivos = r.motivos || {}; qty0 = r.cantidad_por_defecto || 1;
   if (!$("qty").value) $("qty").value = qty0;
   if (catalog.some((e) => !e.fila1 || !e.interpretado || !cmeta.columnas)) {   // catálogo de una versión anterior
     catalog = []; cmeta = {};
@@ -345,6 +345,19 @@ function planSap(e, r, mov) {
   return box;
 }
 
+function campoEntrada(f, v, mov, placeholder) {
+  const valor = Array.isArray(v) ? v.join(", ") : (v || "");
+  if (f === "motivo" && motivos[mov]) {                      // motivo: desplegable con los valores válidos del movimiento
+    const s = h("select", { style: "width:100%" }, h("option", { value: "" }, "— elige el motivo —"),
+      ...motivos[mov].map((m) => h("option", { value: m.codigo }, `${m.codigo} · ${m.texto}`)));
+    s.value = valor;
+    return s;
+  }
+  const inp = h("input", { type: "text", style: "width:100%", placeholder });
+  inp.value = valor;
+  return inp;
+}
+
 function detailRow(e, span) {
   const d = e.datos;
   const mov = movOf(e);
@@ -357,8 +370,7 @@ function detailRow(e, span) {
   const grid = h("div", { style: "display:grid;grid-template-columns:150px 1fr auto;gap:5px 8px;align-items:center;margin-top:6px" });
   for (const f of r.req.requiere) {
     const v = r.vals[f];
-    const inp = h("input", { type: "text", style: "width:100%", placeholder: v ? "" : "obligatorio" });
-    inp.value = Array.isArray(v) ? v.join(", ") : (v || "");
+    const inp = campoEntrada(f, v, mov, v ? "" : "obligatorio");
     inputs[f] = inp;
     inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));   // se guarda al salir del campo o con Intro
     grid.append(h("span", {}, lab(f)), inp, v ? h("span", { class: "muted" }, r.src[f]) : chip("ERROR", "falta"));
@@ -369,6 +381,12 @@ function detailRow(e, span) {
     inputs[f] = inp;
     inp.addEventListener("change", () => guardar(e, { [f]: inp }, false));
     grid.append(h("span", { class: "muted" }, lab(f) + " (opcional)"), inp, h("span", { class: "muted" }, r.vals[f] ? r.src[f] : ""));
+  }
+  if (motivos[mov] && !r.req.requiere.includes("motivo") && !(r.req.opcionales || []).includes("motivo")) {   // movimiento con motivos definidos pero no obligatorio
+    const sel = campoEntrada("motivo", r.vals.motivo, mov, "opcional");
+    sel.addEventListener("change", () => guardar(e, { motivo: sel }, false));
+    inputs.motivo = sel;
+    grid.append(h("span", { class: "muted" }, "Motivo del movimiento (opcional)"), sel, h("span", { class: "muted" }, r.vals.motivo ? r.src.motivo : ""));
   }
   if (reqCfg.campos.lote) {
     const sug = lotesSugeridos(e);
