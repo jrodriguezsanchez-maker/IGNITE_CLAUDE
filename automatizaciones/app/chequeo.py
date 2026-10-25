@@ -39,9 +39,16 @@ def chequear(sel, backend, cantidad_global, req_cfg, defaults, modo):
                 qty = float(str(vals["cantidad"]).replace(",", "."))
             except ValueError:
                 qty = float(cantidad_global)
-            malos = sin_stock = parcial = 0
+            malos = sin_stock = parcial = errores = 0
             for m in vals["material"]:
-                st = backend.stock_origen(m, centro, almacen, wm)
+                try:
+                    st = backend.stock_origen(m, centro, almacen, wm)
+                except Exception as ex:          # p. ej. almacén WM aún no soportado, SAP ocupado o sin sesión
+                    errores += 1
+                    fila["items"].append({"material": m, "stock": None, "fuente_stock": "", "lotes_activo": None, "lote": "", "lote_stock": 0,
+                                          "cantidad": qty, "cantidad_origen": fuentes.get("cantidad", ""), "registro_info": None,
+                                          "cantidad_propuesta": None, "lote_propuesto": "", "error": str(ex)})
+                    continue
                 lineas = sorted([l for l in st["lineas"] if l["qty"] > 0], key=engine._orden)
                 total = sum(l["qty"] for l in lineas)
                 item = {"material": m, "stock": total, "fuente_stock": st["fuente"], "lotes_activo": st["lotes_activo"],
@@ -49,8 +56,12 @@ def chequear(sel, backend, cantidad_global, req_cfg, defaults, modo):
                         "cantidad": qty, "cantidad_origen": fuentes.get("cantidad", ""), "registro_info": None,
                         "cantidad_propuesta": None, "lote_propuesto": ""}
                 if modo == "sto":
-                    item["registro_info"] = bool(backend.registro_info(m, centro, vals["org_compras"]))
-                    malos += 0 if item["registro_info"] else 1
+                    try:
+                        item["registro_info"] = bool(backend.registro_info(m, centro, vals["org_compras"]))
+                        malos += 0 if item["registro_info"] else 1
+                    except NotImplementedError:
+                        if "registro info no comprobado" not in " ".join(fila["avisos"]):
+                            fila["avisos"].append("registro info no comprobado (la comprobación real aún no está implementada)")
                 if not lineas:
                     sin_stock += 1
                 elif total < qty:
@@ -60,7 +71,10 @@ def chequear(sel, backend, cantidad_global, req_cfg, defaults, modo):
                     if p:
                         item["cantidad_propuesta"], item["lote_propuesto"] = p["cantidad"], p["lote"] or "sin lote"
                 fila["items"].append(item)
-            if malos:
+            if errores:
+                fila["estado"] = "ERROR_SAP"
+                fila["avisos"].append("error al leer SAP: " + "; ".join(sorted({i["error"] for i in fila["items"] if i.get("error")}))[:300])
+            elif malos:
                 fila["estado"] = "SIN_REGISTRO_INFO"
             elif sin_stock == len(fila["items"]):
                 fila["estado"] = "SIN_STOCK"
@@ -68,4 +82,5 @@ def chequear(sel, backend, cantidad_global, req_cfg, defaults, modo):
                 fila["estado"] = "AVISO"
                 fila["avisos"].append("stock insuficiente en algún material: se movería lo disponible (parcial)")
         filas.append(fila)
-    return {"simulado": backend.simulado, "puede_proponer": backend.puede_proponer_cantidad, "filas": filas}
+    info = backend.info() if hasattr(backend, "info") else {}
+    return {"simulado": backend.simulado, "puede_proponer": backend.puede_proponer_cantidad, "sistema": info, "filas": filas}

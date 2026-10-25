@@ -1,0 +1,10 @@
+{
+  "_nota": "Plantilla. Copia este fichero como conexion_local.json (que NO se sube a GitHub) y pon el sistema de PRUEBAS permitido. Nunca guardes usuario ni contraseña aquí.",
+  "modo": "simulado",
+  "sistemas_permitidos": [
+    {
+      "sid": "SID_DE_PRUEBAS",
+      "mandante": "000"
+    }
+  ]
+}

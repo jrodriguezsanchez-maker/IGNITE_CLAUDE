@@ -6,6 +6,7 @@ Uso:  python server.py   ->  http://127.0.0.1:8765
 """
 import json
 import re
+import sys
 import threading
 import time
 import unicodedata
@@ -23,7 +24,8 @@ from xlsx_reader import read_xlsx
 
 ROOT = Path(__file__).resolve().parent.parent  # .../automatizaciones
 STATIC = Path(__file__).resolve().parent / "static"
-HOST, PORT = "127.0.0.1", 8765
+HOST = "127.0.0.1"
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 8765
 MAX_UPLOAD = 20 * 1024 * 1024
 SAFE = re.compile(r"^[A-Za-z0-9_\-]+$")
 SAFE_FILE = re.compile(r"^[A-Za-z0-9_\-. ()]+\.xlsx$")
@@ -269,6 +271,10 @@ class Handler(BaseHTTPRequestHandler):
             headers, rows = read_xlsx(d / "data" / name)
             mapping, missing = engine.map_columns(headers)
             return self._send(200, {"cabeceras": headers, "filas": rows[:50], "total": len(rows), "faltan": missing})
+        if u.path == "/api/modo":
+            import sap_backend
+            cfg = sap_backend.leer_config()
+            return self._send(200, {"modo": cfg.get("modo", "simulado"), "sistemas": ["%s/%s" % (p["sid"], p["mandante"]) for p in cfg.get("sistemas_permitidos", [])]})
         if u.path == "/api/sit/catalog":
             d = flow_dir(q.get("stream", ""), q.get("flow", ""))
             mp = d / "data" / "catalogo_meta.json"
@@ -375,6 +381,12 @@ class Handler(BaseHTTPRequestHandler):
                 defaults_path(d).write_text(json.dumps(df, ensure_ascii=False), encoding="utf-8")
             catalog_path(d).write_text(json.dumps(cat, ensure_ascii=False), encoding="utf-8")
             return self._send(200, {"ok": True, "escenarios": cat, "defaults": load_defaults(d)})
+        if u.path == "/api/modo":
+            import sap_backend
+            if data.get("modo") not in ("simulado", "sap"):
+                raise ValueError("Modo no válido")
+            cfg = sap_backend.guardar_modo(data["modo"])
+            return self._send(200, {"modo": cfg["modo"], "sistemas": ["%s/%s" % (p["sid"], p["mandante"]) for p in cfg.get("sistemas_permitidos", [])]})
         if u.path == "/api/sit/chequear":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             claves = {str(c) for c in data.get("claves", [])}
@@ -394,7 +406,12 @@ class Handler(BaseHTTPRequestHandler):
                     if re.match(r"^[0-9A-Z]{3,4}$", movs.get(e["clave"], "")):
                         e = {**e, "mov": movs[e["clave"]]}   # el tipo que se ve en pantalla, sin confirmarlo
                     sel.append(e)
-            return self._send(200, chequeo.chequear(sel, engine.crear_backend(), cantidad, load_req(d), load_defaults(d), modo))
+            backend = engine.crear_backend("chequeo")      # SAP real (solo lectura) si el modo local lo indica
+            try:
+                return self._send(200, chequeo.chequear(sel, backend, cantidad, load_req(d), load_defaults(d), modo))
+            finally:
+                if hasattr(backend, "cerrar"):
+                    backend.cerrar()
         if u.path == "/api/sit/run":
             d = flow_dir(data.get("stream", ""), data.get("flow", ""))
             claves = [str(c) for c in data.get("claves", [])]

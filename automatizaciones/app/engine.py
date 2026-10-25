@@ -122,7 +122,7 @@ def _num(v):
 
 def _orden(l):
     # FEFO: caducidad asc (los que no caducan al final); desempate FIFO por fecha de entrada
-    return (l["caducidad"] or "9999-99-99", l["entrada"] or "9999-99-99")
+    return (l["caducidad"] or "9999-99-99", l["entrada"] or "9999-99-99", l.get("lote", ""))
 
 
 def run(headers, rows, backend, log):
@@ -177,6 +177,12 @@ def run(headers, rows, backend, log):
     return results, resumen
 
 
-def crear_backend():
-    """Backend activo. Hoy simulado; con la conexión a SAP GUI devolverá el backend real."""
+def crear_backend(para="ejecucion"):
+    """Backend activo. La ejecución (contabilizar) es SIEMPRE simulada de momento.
+    El chequeo usa SAP real (solo lectura) si conexion_local.json tiene modo "sap"."""
+    if para == "chequeo":
+        import sap_backend
+        cfg = sap_backend.leer_config()
+        if cfg.get("modo") == "sap":
+            return sap_backend.SapGuiBackend(cfg)
     return MockSap()

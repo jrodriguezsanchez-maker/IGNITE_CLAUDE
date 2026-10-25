@@ -7,6 +7,7 @@ let sel = null;               // {stream, flow, meta}
 let files = [];
 let catalog = [], cmeta = {}; // escenarios SIT y datos de la importación
 let reqCfg = null, defaults = {}, qty0 = 1;
+let modoSap = false;
 const chk = {};           // clave -> estado del último chequeo
 let cantidadesOk = {};    // clave -> {material: cantidad} propuestas aceptadas
 const picked = new Set();
@@ -440,6 +441,7 @@ async function chequear() {
     const card = h("div", { class: "prop" }, h("h3", { style: "margin-top:0" }, `Chequeo de ${r.filas.length} escenario(s) · solo lectura`),
       h("div", { class: "row" }, ...Object.entries(cuenta).map(([k, n]) => h("span", {}, chip(k, k === "LISTO" ? "LISTO" : k.replace(/_/g, " ")), ` ${n}`))));
     if (r.simulado) card.append(h("div", { class: "muted" }, "Chequeo SIMULADO: stock y registros info son inventados; sirve para ver el formato y detectar datos pendientes."));
+    else card.append(h("div", { class: "muted" }, `Chequeo con SAP real (${(r.sistema || {}).sistema || "—"}/${(r.sistema || {}).mandante || "—"}) · solo lectura. Lotes ordenados por número de lote: MB52 no da caducidad ni fecha de entrada. El registro info aún no se comprueba contra SAP.`));
     if (!r.puede_proponer) card.append(h("div", { class: "muted" }, `La propuesta de cantidad desde el stock estará disponible al conectar con SAP. De momento se usa la cantidad por defecto (${qtyGlobal()}) cuando no la indiques.`));
     const th = ["JIRA ID", "External ID - JIRA", etq().clase, "Estado", "Material", ...(esSto() ? ["Registro info"] : []), "Stock libre", "Lote (FEFO/FIFO)", "Cantidad", "Propuesta", "Detalle"];
     const tb = h("table", {}, h("tr", {}, th.map((x) => h("th", {}, x))));
@@ -451,8 +453,8 @@ async function chequear() {
         if (it && it.cantidad_propuesta != null) (propuestas[f.clave] = propuestas[f.clave] || {})[it.material] = it.cantidad_propuesta;
         tb.append(h("tr", {}, h("td", {}, f.jira_id), h("td", {}, f.id_jira_unidad), h("td", {}, f.mov), h("td", {}, i === 0 ? chip(f.estado) : ""),
           h("td", {}, it ? it.material : ""),
-          ...(esSto() ? [h("td", {}, it ? (it.registro_info ? chip("OK", "OK") : chip("ERROR", "FALTA (ME11)")) : "")] : []),
-          h("td", {}, it ? `${it.stock} (${it.fuente_stock})` : ""), h("td", {}, it ? (it.lote || "—") + (it.lote ? ` · ${it.lote_stock}` : "") : ""),
+          ...(esSto() ? [h("td", {}, it ? (it.registro_info === null ? h("span", { class: "muted" }, "no comprobado") : it.registro_info ? chip("OK", "OK") : chip("ERROR", "FALTA (ME11)")) : "")] : []),
+          h("td", {}, it ? (it.stock === null ? "—" : `${it.stock} (${it.fuente_stock})`) : ""), h("td", {}, it ? (it.lote || "—") + (it.lote ? ` · ${it.lote_stock}` : "") : ""),
           h("td", {}, it ? `${it.cantidad} (${it.cantidad_origen})` : ""), h("td", {}, it && it.cantidad_propuesta != null ? `${it.cantidad_propuesta} · lote ${it.lote_propuesto}` : ""),
           h("td", {}, i === 0 ? det : "")));
       });
@@ -470,20 +472,25 @@ $("btnChk").addEventListener("click", chequear);
 
 $("qty").addEventListener("change", () => { for (const k of Object.keys(chk)) delete chk[k]; cantidadesOk = {}; renderSit(); });
 $("btnRunSit").addEventListener("click", async () => {
-  const items = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
-  const malos = items.filter((i) => !movOk(i.mov));
+  const todos = catalog.filter((e) => picked.has(e.clave)).map((e) => ({ e, mov: movOf(e) }));
+  const malos = todos.filter((i) => !movOk(i.mov));
   if (malos.length) return note($("sitOut"), `Falta indicar ${etq().clase.toLowerCase()} (p. ej. ${etq().clase_ejemplo}) en ${malos.length} escenario(s): ` +
     malos.slice(0, 8).map((i) => i.e.fila1["JIRA ID"]).join(", ") + (malos.length > 8 ? "…" : ""), true);
+  const BLOQ = ["SIN_REGISTRO_INFO", "SIN_STOCK", "ERROR_SAP"];   // el chequeo ya dijo que no se puede ejecutar
+  const excl = todos.filter((i) => BLOQ.includes(chk[i.e.clave]));
+  const items = todos.filter((i) => !BLOQ.includes(chk[i.e.clave]));
+  if (!items.length) return note($("sitOut"), "Todos los escenarios seleccionados quedaron bloqueados por el chequeo (sin registro info, sin stock o error de SAP). Revisa el informe.", true);
   const rs = items.map((i) => resolve(i.e, i.mov));
   const noSop = rs.filter((r) => r.req.transaccion).length;
   const falta = rs.filter((r) => !r.req.transaccion && r.faltan.length).length;
   const resumen = {};
   items.forEach((i) => { resumen[i.mov] = (resumen[i.mov] || 0) + 1; });
   const sinChk = items.filter((i) => !chk[i.e.clave]).length;
-  const malChk = items.filter((i) => ["SIN_REGISTRO_INFO", "SIN_STOCK"].includes(chk[i.e.clave])).length;
   const txt = `Vas a lanzar ${items.length} escenario(s) en modo SIMULADO (no se conecta a SAP).\n\n` +
+    (modoSap ? "AVISO: el chequeo usa SAP real, pero el lanzamiento todavía es simulado: no contabiliza nada en SAP.\n\n" : "") +
     (sinChk ? `AVISO: ${sinChk} escenario(s) sin chequear (botón «Chequear datos»: comprueba datos, registro info y stock sin contabilizar).\n` : "") +
-    (malChk ? `${malChk} salieron del chequeo sin registro info o sin stock y no se ejecutarán.\n` : "") + 
+    (excl.length ? `${excl.length} se EXCLUYEN del lanzamiento porque el chequeo dio sin registro info, sin stock o error de SAP.
+` : "") +
     `${etq().clase}: ${Object.entries(resumen).map(([m, n]) => `${m} × ${n}`).join(", ")}\nCantidad por defecto: ${qtyGlobal()}\n` +
     (falta ? `${falta} tienen datos pendientes y no se ejecutarán (FALTAN DATOS).\n` : "") +
     (noSop ? `${noSop} no se hacen con MIGO (NO SOPORTADO).\n` : "") + (esSto() ? "\nFase 1: se valida registro info, se busca lote con stock y se crean el STO y la entrega de salida." : "") + `\n¿Confirmas y lanzas?`;
@@ -578,6 +585,28 @@ $("btnCsv").addEventListener("click", () => {
 });
 
 // ---------- arranque: abre el primer flujo SIT (o el primero) ----------
+async function loadModo() {
+  try {
+    const m = await api("/api/modo");
+    modoSap = m.modo === "sap";
+    $("modoSel").value = m.modo;
+    const b = $("badge");
+    b.classList.toggle("sap", modoSap);
+    b.textContent = modoSap ? `CHEQUEO CON SAP REAL (${m.sistemas.join(", ")}) · solo lectura · el lanzamiento sigue simulado` : "MODO SIMULADO · sin conexión a SAP";
+  } catch (e) { /* servidor antiguo sin /api/modo: se queda en simulado */ }
+}
+$("modoSel").addEventListener("change", async () => {
+  try {
+    await post("/api/modo", { modo: $("modoSel").value });
+    for (const k of Object.keys(chk)) delete chk[k];
+    cantidadesOk = {};
+    clear($("chkOut"));
+    await loadModo();
+    renderSit();
+  } catch (e) { note($("sitOut"), e.message, true); await loadModo(); }
+});
+loadModo();
+
 loadTree().then((t) => {
   const flows = t.flatMap((s) => s.flujos.map((f) => [s.id, f]));
   const first = flows.find(([, f]) => f.tipo === "sit_jira") || flows[0];

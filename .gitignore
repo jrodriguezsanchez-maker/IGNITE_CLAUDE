@@ -38,6 +38,9 @@
 *.ini
 saplogon*
 
+# --- Conexión local a SAP (sistemas permitidos y modo): NUNCA a GitHub ---
+**/conexion_local.json
+
 # --- Config local de Claude Code ---
 .claude/settings.local.json
 

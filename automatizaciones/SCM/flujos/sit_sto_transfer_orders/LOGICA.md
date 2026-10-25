@@ -36,3 +36,11 @@ No hay derivación de centro destino = origen (en un STO son distintos). Lo que 
   desde el stock libre del lote elegido y se usa solo si la aceptas antes de lanzar. El motor simulado no propone cantidades.
 - Al abrir un escenario (pulsando su OK/NOK) se ve **«Qué haría en SAP si se lanzara ahora»**: los pasos con su transacción y los valores concretos
   (lo que falta aparece como FALTA). Los datos que escribes en el detalle se guardan al salir del campo o al pulsar Intro.
+
+## Chequeo con SAP real (solo lectura)
+- Selector en la cabecera: **Chequeo simulado** (por defecto) o **Chequeo con SAP real**. El modo se guarda en `automatizaciones/conexion_local.json`
+  (fuera de git, con la lista de sistemas/mandantes permitidos: solo el de pruebas). Plantilla: `conexion_local.ejemplo.json`.
+- Con SAP real, «Chequear datos» lee el stock libre y los lotes con **MB52** (sesión abierta por el usuario, sin credenciales en ficheros) y propone la cantidad
+  desde el stock libre del primer lote. Se aborta si la sesión no es de un sistema/mandante permitido, si SAP no está en la pantalla inicial o si aparece una ventana emergente.
+- Aún no implementado con SAP real: registro info (ME13), almacenes WM (LS24), caducidad/fecha de entrada del lote (los lotes se ordenan por número de lote)
+  y la **contabilización**: el lanzamiento sigue siendo simulado. Los escenarios que el chequeo dio sin stock, sin registro info o con error de SAP se excluyen del lanzamiento.
