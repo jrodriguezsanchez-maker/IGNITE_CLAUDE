@@ -79,6 +79,8 @@ def main():
     ses = None
     for i in range(engine.Children.Count):
         con = engine.Children.Item(i)
+        if sid.lower() not in str(attr(con, "Description")).lower():
+            continue                       # otras conexiones (p. ej. producción): no se tocan
         for j in range(con.Children.Count):
             s = con.Children.Item(j)
             if str(s.Info.SystemName).upper() == sid:

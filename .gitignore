@@ -44,6 +44,9 @@ saplogon*
 # --- Config local de Claude Code ---
 .claude/settings.local.json
 
+# --- Librerías locales (pywin32 copiada para que el servidor la encuentre) ---
+**/vendor/
+
 # --- Python / entorno ---
 __pycache__/
 *.pyc

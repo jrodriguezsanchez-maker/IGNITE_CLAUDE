@@ -12,15 +12,47 @@ Uso (prueba):  python sap_mb52.py <SID> <material> <centro> [almacen]
 import sys
 import time
 
+import os
+from pathlib import Path
+
+
+def _usar_pywin32_local():
+    """Añade vendor/pywin32 (copia local, fuera de git) a la ruta de Python. Hace falta porque la app de Claude ve una copia privada de AppData
+    y un pywin32 instalado con pip --user desde ella no lo ven los procesos lanzados desde el Explorador (como el servidor del front)."""
+    v = Path(__file__).resolve().parent.parent / "vendor" / "pywin32"
+    if not v.is_dir():
+        return False
+    for sub in ("", "win32", "win32/lib"):
+        p = str(v / sub) if sub else str(v)
+        if p not in sys.path:
+            sys.path.append(p)
+    dll = v / "pywin32_system32"
+    if dll.is_dir():
+        os.add_dll_directory(str(dll))
+        os.environ["PATH"] = str(dll) + os.pathsep + os.environ.get("PATH", "")
+    return True
+
+
 try:
     import pythoncom
     import win32com.client
-except ImportError:      # el servidor puede arrancar sin pywin32 (modo simulado)
-    pythoncom = win32com = None
+except ImportError:
+    try:
+        if not _usar_pywin32_local():
+            raise ImportError
+        import pythoncom
+        import win32com.client
+    except ImportError:  # el servidor puede arrancar sin pywin32 (modo simulado)
+        pythoncom = win32com = None
 
 
 class SapError(ValueError):
     pass
+
+
+def msg_falta_pywin32():
+    return ("Falta pywin32 para %s. Instálalo desde un PowerShell normal (menú Inicio > Windows PowerShell; NO desde la app de Claude, "
+            "que ve una copia privada de AppData): python -m pip install --user pywin32  — y reinicia el servidor." % sys.executable)
 
 
 def _attr(o, nombre, defecto=""):
@@ -32,20 +64,37 @@ def _attr(o, nombre, defecto=""):
 
 def _engine():
     if win32com is None:
-        raise SapError("Falta pywin32: python -m pip install --user pywin32")
+        raise SapError(msg_falta_pywin32())
     try:
         return win32com.client.GetObject("SAPGUI").GetScriptingEngine
     except pythoncom.com_error:
         raise SapError("No se puede enganchar a SAP GUI (¿SAP Logon cerrado o scripting desactivado?)")
 
 
-def _sesiones(engine, sid):
+def _descripcion(con):
+    try:
+        return str(con.Description)
+    except Exception:
+        return ""
+
+
+def _conexion_permitida(con, sid, conexion=None):
+    """Una conexión es candidata si su entrada de SAP Logon coincide con la configurada (o contiene el SID).
+    Solo se lee la DESCRIPCIÓN de la conexión: las sesiones de cualquier otra conexión (p. ej. producción) no se tocan ni para leerlas."""
+    d = _descripcion(con).lower()
+    return (conexion.lower() in d) if conexion else (str(sid).lower() in d)
+
+
+def _sesiones(engine, sid, mandante=None, conexion=None):
+    """Sesiones del sistema (y mandante) indicados, SOLO de las conexiones permitidas."""
     res = []
     for i in range(engine.Children.Count):
         con = engine.Children.Item(i)
+        if not _conexion_permitida(con, sid, conexion):
+            continue
         for j in range(con.Children.Count):
             s = con.Children.Item(j)
-            if str(s.Info.SystemName).upper() == str(sid).upper():
+            if str(s.Info.SystemName).upper() == str(sid).upper() and (mandante is None or str(s.Info.Client) == str(mandante)):
                 res.append((con, s))
     return res
 
@@ -72,12 +121,12 @@ def _crear_sesion(con, base):
     raise SapError("SAP no abrió la sesión nueva a tiempo.")
 
 
-def sesion(sid, crear=False):
+def sesion(sid, crear=False, mandante=None, conexion=None):
     """Devuelve (sesion, creada). Usa una sesión LIBRE para no interrumpir el trabajo del usuario en otras.
     Si no hay ninguna libre y crear=True, abre una nueva (que luego hay que cerrar con cerrar_sesion)."""
-    cands = _sesiones(_engine(), sid)
+    cands = _sesiones(_engine(), sid, mandante, conexion)
     if not cands:
-        raise SapError("No hay ninguna sesión abierta en el sistema %s." % sid)
+        raise SapError("No hay ninguna sesión abierta en el sistema %s%s." % (sid, "/" + str(mandante) if mandante else ""))
     for con, s in cands:
         if _libre(s):
             return s, False
@@ -104,14 +153,18 @@ def cerrar_sesion(ses):
 def estado(permitidos):
     """Diagnóstico de solo lectura: ¿hay conexión con un sistema permitido? No crea ni cierra sesiones."""
     if win32com is None:
-        return {"ok": False, "mensaje": "Falta pywin32 (python -m pip install --user pywin32)."}
+        return {"ok": False, "mensaje": msg_falta_pywin32()}
     try:
         engine = _engine()
     except SapError as e:
         return {"ok": False, "mensaje": str(e)}
-    sistemas = {}
+    sistemas, no_tocadas = {}, []
     for i in range(engine.Children.Count):
         con = engine.Children.Item(i)
+        permitida = next((p for p in permitidos if _conexion_permitida(con, p["sid"], p.get("conexion"))), None)
+        if permitida is None:
+            no_tocadas.append(_descripcion(con) or "(sin nombre)")      # no se accede a sus sesiones
+            continue
         for j in range(con.Children.Count):
             s = con.Children.Item(j)
             clave = (str(s.Info.SystemName).upper(), str(s.Info.Client))
@@ -137,9 +190,8 @@ def estado(permitidos):
                 ok = False
         else:
             partes.append("%s/%s: no hay sesión abierta" % (p["sid"], p["mandante"]))
-    otros = [k for k in sistemas if not any((str(p["sid"]).upper(), str(p["mandante"])) == k for p in permitidos)]
-    if otros:
-        partes.append("otros sistemas abiertos (se ignoran): " + ", ".join("%s/%s" % k for k in otros))
+    if no_tocadas:
+        partes.append("otras conexiones abiertas (no se tocan): " + ", ".join(no_tocadas))
     return {"ok": ok, "mensaje": " · ".join(partes) or "SAP GUI abierto, sin conexiones."}
 
 

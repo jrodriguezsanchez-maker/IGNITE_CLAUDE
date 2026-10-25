@@ -1,10 +1,11 @@
 {
-  "_nota": "Plantilla. Copia este fichero como conexion_local.json (que NO se sube a GitHub) y pon el sistema de PRUEBAS permitido. Nunca guardes usuario ni contraseña aquí.",
+  "_nota": "Plantilla. Copia este fichero como conexion_local.json (que NO se sube a GitHub). 'conexion' es el nombre de la entrada de SAP Logon del sistema de PRUEBAS: el programa NO toca ninguna otra conexión abierta (p. ej. producción). Nunca guardes usuario ni contraseña aquí.",
   "modo": "simulado",
   "sistemas_permitidos": [
     {
       "sid": "SID_DE_PRUEBAS",
-      "mandante": "000"
+      "mandante": "000",
+      "conexion": "Nombre exacto de la entrada en SAP Logon (p. ej. «XXX - Calidad»)"
     }
   ]
 }

@@ -31,11 +31,10 @@ def guardar_modo(modo):
 def estado():
     """Diagnóstico de solo lectura de la conexión (botón «Probar conexión SAP»)."""
     cfg = leer_config()
-    try:
-        import pythoncom
-        import sap_mb52
-    except ImportError:
-        return {"ok": False, "mensaje": "Falta pywin32 (python -m pip install --user pywin32)."}
+    import sap_mb52
+    pythoncom = sap_mb52.pythoncom
+    if pythoncom is None:
+        return {"ok": False, "mensaje": sap_mb52.msg_falta_pywin32()}
     pythoncom.CoInitialize()
     try:
         return sap_mb52.estado(cfg.get("sistemas_permitidos") or [])
@@ -62,11 +61,10 @@ class SapGuiBackend(engine.SapBackend):
     puede_proponer_cantidad = True
 
     def __init__(self, cfg):
-        try:
-            import pythoncom
-        except ImportError:
-            raise ValueError("Falta pywin32: python -m pip install --user pywin32")
         import sap_mb52
+        pythoncom = sap_mb52.pythoncom
+        if pythoncom is None:
+            raise ValueError(sap_mb52.msg_falta_pywin32())
         self._com = pythoncom
         self._mb52 = sap_mb52
         pythoncom.CoInitialize()
@@ -79,7 +77,7 @@ class SapGuiBackend(engine.SapBackend):
         errores = []
         for p in permitidos:
             try:
-                ses, creada = sap_mb52.sesion(p["sid"], crear=True)   # sesión libre o, si no hay, una nueva
+                ses, creada = sap_mb52.sesion(p["sid"], crear=True, mandante=p["mandante"], conexion=p.get("conexion"))   # sesión libre o, si no hay, una nueva
             except sap_mb52.SapError as e:
                 errores.append(str(e))
                 continue
@@ -116,6 +114,9 @@ class SapGuiBackend(engine.SapBackend):
         if self._consultas >= MAX_CONSULTAS:
             raise self._mb52.SapError("Límite de %d consultas a SAP por chequeo: reduce la selección." % MAX_CONSULTAS)
         self._consultas += 1
+        # defensa en profundidad: justo antes de actuar se vuelve a comprobar que la sesión es del sistema y mandante permitidos
+        if str(self.ses.Info.SystemName).upper() != str(self.sid).upper() or str(self.ses.Info.Client) != str(self.mandante):
+            raise self._mb52.SapError("La sesión ya no es del sistema permitido (%s/%s): se aborta." % (self.sid, self.mandante))
         r = self._mb52.consultar(self.ses, material, centro, almacen, lotes=True, especiales=False)
         lineas = []
         for f in r["filas"]:

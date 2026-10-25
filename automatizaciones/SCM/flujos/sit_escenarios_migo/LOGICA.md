@@ -59,3 +59,7 @@ y queda en `data/` (fuera de git). El catálogo importado y los resultados tampo
 - Botón **Probar conexión SAP** (cabecera, solo lectura): indica si hay sesión en un sistema permitido, cuántas hay, cuántas libres y si el scripting responde.
 - Sesiones: el programa usa una sesión **libre** (pantalla inicial, sin ventanas). Si todas están ocupadas **abre una sesión nueva**, la usa y la cierra al terminar;
   nunca cierra ni toca sesiones del usuario. Cada vez que el programa se engancha, SAP muestra el aviso de «un script se engancha» y lo acepta el usuario.
+- **Solo se toca la conexión permitida:** `conexion_local.json` indica sistema, mandante y el nombre de la entrada de SAP Logon (`conexion`). El programa solo lee el
+  nombre de las demás conexiones abiertas (p. ej. producción) y **no accede a sus sesiones**, ni siquiera para leerlas.
+- `pywin32`: si no está en el Python del usuario se usa la copia de `automatizaciones/vendor/pywin32` (fuera de git). Hace falta porque la app de Claude es una aplicación
+  empaquetada de Windows y un `pip install --user` hecho desde ella queda en una copia privada de AppData que no ven los procesos lanzados desde el Explorador.
