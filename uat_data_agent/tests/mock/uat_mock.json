@@ -1,0 +1,189 @@
+[
+ {
+  "ID by unit": "MOCK-PP-01",
+  "New ID": "N-MOCK-PP-01",
+  "L2": "4.1",
+  "L3": "Fabricación repetitiva",
+  "Location by Unit": "M020",
+  "Test Scenario": "Backflush de producto terminado en línea repetitiva",
+  "Step": 1,
+  "Transaction": "MD61",
+  "Data": "Plant: M020\n-----------------------\nMaterial: 1000001 (ZFIN)"
+ },
+ {
+  "ID by unit": "MOCK-PP-01",
+  "New ID": "N-MOCK-PP-01",
+  "L2": "4.1",
+  "L3": "Fabricación repetitiva",
+  "Location by Unit": "M020",
+  "Test Scenario": "Backflush de producto terminado en línea repetitiva",
+  "Step": 2,
+  "Transaction": "MFBF",
+  "Data": "Plant: M020\nMaterial: 1000001"
+ },
+ {
+  "ID by unit": "MOCK-PP-01",
+  "New ID": "N-MOCK-PP-01",
+  "L2": "4.1",
+  "L3": "Fabricación repetitiva",
+  "Location by Unit": "M020",
+  "Test Scenario": "Backflush de producto terminado en línea repetitiva",
+  "Step": 3,
+  "Transaction": "MIGO",
+  "Data": "Mov.Type: 101"
+ },
+ {
+  "ID by unit": "MOCK-PP-02",
+  "New ID": "N-MOCK-PP-02",
+  "L2": "4.1",
+  "L3": "Fabricación repetitiva",
+  "Location by Unit": "M020",
+  "Test Scenario": "Reversión de backflush",
+  "Step": 1,
+  "Transaction": "MF12",
+  "Data": "Plant: M020\nMaterial: 1000002"
+ },
+ {
+  "ID by unit": "MOCK-QM-01",
+  "New ID": "N-MOCK-QM-01",
+  "L2": "4.4",
+  "L3": "Inspección en recepción",
+  "Location by Unit": "M020",
+  "Test Scenario": "Lote de inspección con decisión de empleo",
+  "Step": 1,
+  "Transaction": "QA32",
+  "Data": "Plant: M020\nMaterial: 1000001"
+ },
+ {
+  "ID by unit": "MOCK-QM-01",
+  "New ID": "N-MOCK-QM-01",
+  "L2": "4.4",
+  "L3": "Inspección en recepción",
+  "Location by Unit": "M020",
+  "Test Scenario": "Lote de inspección con decisión de empleo",
+  "Step": 2,
+  "Transaction": "QE51N",
+  "Data": "Plant: M020"
+ },
+ {
+  "ID by unit": "MOCK-PM-01",
+  "New ID": "N-MOCK-PM-01",
+  "L2": "5.3",
+  "L3": "Mantenimiento correctivo",
+  "Location by Unit": "M020",
+  "Test Scenario": "Aviso y orden de mantenimiento sobre equipo",
+  "Step": 1,
+  "Transaction": "IW21",
+  "Data": "Plant: M020\nNotification Type: M1\nEquipment: 10000001"
+ },
+ {
+  "ID by unit": "MOCK-PM-01",
+  "New ID": "N-MOCK-PM-01",
+  "L2": "5.3",
+  "L3": "Mantenimiento correctivo",
+  "Location by Unit": "M020",
+  "Test Scenario": "Aviso y orden de mantenimiento sobre equipo",
+  "Step": 2,
+  "Transaction": "IW31",
+  "Data": "Plant: M020\nEquipment: 10000001"
+ },
+ {
+  "ID by unit": "MOCK-WM-01",
+  "New ID": "N-MOCK-WM-01",
+  "L2": "3.2",
+  "L3": "Almacén WM",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado de ubicación en almacén WM",
+  "Step": 1,
+  "Transaction": "LT01",
+  "Data": "Plant: L101\nMaterial: 1000001"
+ },
+ {
+  "ID by unit": "MOCK-WM-01",
+  "New ID": "N-MOCK-WM-01",
+  "L2": "3.2",
+  "L3": "Almacén WM",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado de ubicación en almacén WM",
+  "Step": 2,
+  "Transaction": "LT12",
+  "Data": "Plant: L101"
+ },
+ {
+  "ID by unit": "MOCK-LOG-01",
+  "New ID": "N-MOCK-LOG-01",
+  "L2": "3.1",
+  "L3": "Traslado intra-sociedad",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado entre plantas misma sociedad",
+  "Step": 1,
+  "Transaction": "ME21N",
+  "Data": "C.Code: 1010\nP.Org: ES01\n-----------------------\nDoc Type: ZTRA\nSupplier Plant: L101\nPlant: L102\n-----------------------\nMaterial: 1000001 (ZFIN)"
+ },
+ {
+  "ID by unit": "MOCK-LOG-01",
+  "New ID": "N-MOCK-LOG-01",
+  "L2": "3.1",
+  "L3": "Traslado intra-sociedad",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado entre plantas misma sociedad",
+  "Step": 2,
+  "Transaction": "VL10B",
+  "Data": "C.Code: 1010\nP.Org: ES01\n-----------------------\nDoc Type: ZTRA\nSupplier Plant: L101\nPlant: L102\n-----------------------\nMaterial: 1000001 (ZFIN)"
+ },
+ {
+  "ID by unit": "MOCK-LOG-01",
+  "New ID": "N-MOCK-LOG-01",
+  "L2": "3.1",
+  "L3": "Traslado intra-sociedad",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado entre plantas misma sociedad",
+  "Step": 3,
+  "Transaction": "MIGO",
+  "Data": "Mov.Type: 101"
+ },
+ {
+  "ID by unit": "MOCK-LOG-02",
+  "New ID": "N-MOCK-LOG-02",
+  "L2": "3.1",
+  "L3": "Traslado inter-sociedad",
+  "Location by Unit": "L101",
+  "Test Scenario": "Traslado entre sociedades (ZINT)",
+  "Step": 1,
+  "Transaction": "ME21N",
+  "Data": "C.Code: 1020\nDoc Type: ZINT\nSupplier Plant: L101\nPlant: L102\nVendor: PL101\n-----------------------\nMaterial: 1000002"
+ },
+ {
+  "ID by unit": "MOCK-LOG-03",
+  "New ID": "N-MOCK-LOG-03",
+  "L2": "3.3",
+  "L3": "Venta",
+  "Location by Unit": "L101",
+  "Test Scenario": "Pedido de venta y entrega",
+  "Step": 1,
+  "Transaction": "VA01",
+  "Data": "S.Org: 1200\nDoc Type: ZAOR\nPlant: L101\nBP - Customer: 3000001\nMaterial: 1000006"
+ },
+ {
+  "ID by unit": "MOCK-LOG-03",
+  "New ID": "N-MOCK-LOG-03",
+  "L2": "3.3",
+  "L3": "Venta",
+  "Location by Unit": "L101",
+  "Test Scenario": "Pedido de venta y entrega",
+  "Step": 2,
+  "Transaction": "VL01N",
+  "Data": "Plant: L101"
+ },
+ {
+  "ID by unit": "MOCK-LOG-04",
+  "New ID": "N-MOCK-LOG-04",
+  "L2": "5.5",
+  "L3": "Transporte",
+  "Location by Unit": "L101",
+  "Test Scenario": "Crear transporte",
+  "Step": 1,
+  "Transaction": "VT01N",
+  "Data": "Transportation Planning Point: T101\nShipment Type: Z001"
+ }
+]

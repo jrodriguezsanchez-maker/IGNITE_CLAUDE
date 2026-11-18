@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>UAT · datos por caso</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--line:#dfe3e8;--tx:#1f2933;--mu:#6b7785;--ac:#1f5fbf;--ok:#1e8e4e;--er:#c0392b}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font:14px/1.5 Segoe UI,system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+input,select,button{font:inherit}
+input,select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;background:#fff}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 14px;cursor:pointer}
+button:hover{background:#eef2f7}
+button.pri{background:var(--ac);color:#fff;border-color:var(--ac)}button.pri:hover{background:#174b99}
+button.big{padding:10px 20px;font-size:15px}
+header{background:#14213d;color:#fff;padding:8px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+header b{margin-right:6px}header select,header input{width:auto;min-width:120px;max-width:200px}
+header .nav{margin-left:auto;display:flex;gap:8px;align-items:center}
+header button{background:#ffffff18;color:#fff;border-color:#ffffff40}header button:hover{background:#ffffff30}
+#banner{background:#fff3cd;color:#664d03;padding:6px 18px;font-size:13px}
+main{max-width:860px;margin:18px auto;padding:0 14px 80px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:14px}
+.card h2{margin:0 0 4px;font-size:17px}
+.card.off{opacity:.45;pointer-events:none}
+.num{background:var(--ac);color:#fff;border-radius:50%;width:24px;height:24px;display:inline-grid;place-items:center;font-size:13px;margin-right:8px}
+.done .num{background:var(--ok)}
+.mu{color:var(--mu)}.row{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.row>*{flex:1;min-width:150px}
+label{display:grid;gap:3px;font-size:12.5px;color:var(--mu)}
+.big-in input{font-size:18px;padding:8px 10px;font-weight:600;color:var(--tx);text-transform:uppercase}
+.arrow{flex:0 0 auto!important;min-width:0!important;font-size:22px;color:var(--mu);padding-bottom:8px}
+.tag{font-size:11px;padding:2px 8px;border-radius:9px;color:#fff;font-weight:600;background:#5d4037}
+.msg{padding:8px 12px;border-radius:6px;margin:8px 0;font-size:13px}.msg.er{background:#f8d7da;color:#58151c}.msg.ok{background:#d9f2e3;color:#14532d}.msg.warn{background:#fff3cd;color:#664d03}
+.goal{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+.goal>div{background:#f7f9fc;border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.goal h4{margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mu)}
+.goal ul{margin:0;padding-left:18px}
+.tw{max-height:min(52vh,540px);overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:5px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:#f0f3f7;position:sticky;top:0}tr.pick{cursor:pointer}tr.pick:hover{background:#eef5ff}tr.sel{background:#d9ecff!important}tr.res td{color:var(--er)}
+details{margin-top:8px}summary{cursor:pointer;color:var(--ac)}
+pre{margin:0;white-space:pre-wrap;background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:12.5px/1.4 Consolas,monospace}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.chip.req{border:1px solid var(--line);background:#fff;color:var(--tx)}.chip.req:hover{background:#eef2f7}
+.chip.req.yes{background:#d9f2e3;border-color:#9ad3b3;color:#14532d}.chip.req.no{background:#f8d7da;border-color:#e6a5ab;color:#58151c}
+.chip{padding:2px 10px;border-radius:14px;margin:0 4px 4px 0;font-size:12.5px}.chip.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+td.bad{color:var(--er);font-weight:600}td.ok{color:var(--ok);font-weight:600}
+.empty{text-align:center;padding:60px;color:var(--mu)}
+@media(max-width:700px){.goal{grid-template-columns:1fr}}
+
+.layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 49px)}
+#left{background:#fff;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.filters{padding:10px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
+.filters .two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#list{overflow:auto;flex:1}
+.it{padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.it:hover{background:#f0f4fa}.it.sel{background:#e3edfb;box-shadow:inset 3px 0 0 var(--ac)}
+.it .t{display:flex;gap:6px;align-items:center}.it .s{color:var(--mu);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st{margin-left:auto;font-size:11px;padding:1px 8px;border-radius:9px;border:1px solid var(--line);color:var(--mu)}
+.st.Validado{background:#d9f2e3;color:var(--ok);border-color:#a8dfc0}.st.En{background:#fff0cf;color:#b7791f}.st.Sin{background:#fbdcd8;color:var(--er)}.st.Propuesto{background:#e3edfb;color:#1f5fbf;border-color:#b9d0f2}.st.Original{background:#d9f2e3;color:var(--ok);border-color:#a8dfc0}.st.No{background:#eef0f3;color:#6b7785}.st.Revisar{background:#fff0cf;color:#b7791f;border-color:#f0d9a0}
+main{overflow:auto;margin:0;max-width:none;padding:18px 24px 80px}
+main>*{max-width:1560px;margin-left:auto;margin-right:auto}
+.tg{font-size:10.5px;padding:1px 7px;border-radius:9px;color:#fff;font-weight:600}
+.tg.PP{background:#7c4dff}.tg.QM{background:#00897b}.tg.PM{background:#e65100}.tg.WM{background:#0277bd}.tg.LOG{background:#5d4037}
+@media(max-width:900px){.layout{grid-template-columns:1fr;height:auto}#left{max-height:45vh}}
+
+#filterbar{background:#fff;border-bottom:1px solid var(--line);padding:8px 18px;display:grid;grid-template-columns:2fr 1fr 1fr 2fr 2fr 1fr 1fr auto;gap:8px;align-items:center}
+#filterbar input,#filterbar select{width:100%;min-width:0}
+.steprow{display:grid;grid-template-columns:minmax(300px,390px) 1fr;gap:14px;align-items:start;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.steprow.hdr{border:0;margin-bottom:4px;padding:0}.stepform{background:#fafbfd;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+@media(max-width:1100px){.steprow{grid-template-columns:1fr}}
+.pasof{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:8px 0;background:#fff}.pasof>summary{cursor:pointer}
+.pasof-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 10px;margin-top:8px}.pf-l{font-size:11.5px;color:#556;display:block;margin-bottom:2px}
+.pf-a{cursor:pointer;margin-left:5px;color:#8896ab;text-decoration:none}.pf-a:hover{color:var(--ac)}.pf input{padding:4px 6px}.pasof-f{margin-top:8px}.pasof-f select{width:auto;font-size:12px;padding:3px 6px}
+#fewrap{position:relative;min-width:0}
+#febtn{width:100%;text-align:left;border:1px solid var(--line);border-radius:6px;padding:6px 22px 6px 8px;background:#fff;font:inherit;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;position:relative;cursor:pointer}
+#febtn::after{content:'▾';position:absolute;right:8px;top:6px;color:#666}
+#fepanel{position:absolute;top:100%;left:0;z-index:60;background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.15);padding:6px;min-width:230px;margin-top:2px}
+#fepanel label{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:13px}
+#fepanel label:hover{background:#eef5ff}#fepanel input{width:auto}
+#fepanel .fe-pie{border-top:1px solid var(--line);margin-top:4px;padding:6px 6px 2px;display:flex;justify-content:space-between;font-size:12.5px}
+.layout{height:calc(100vh - 49px - 53px)}
+@media(max-width:1100px){#filterbar{grid-template-columns:repeat(3,1fr)}}
+.ficha{position:sticky;top:-18px;z-index:5;padding:8px 14px;box-shadow:0 2px 8px #0001}
+.ficha .fichal{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ficha .fichab{margin-left:auto;border:0;background:none;font-size:16px;padding:0 6px;cursor:pointer;color:var(--mu)}
+.ficha.compacta .fichad{display:none}
+.ficha:not(.compacta) #resumen{display:none}
+#resumen{font-size:13px;margin-top:3px}
+.stickybar{position:sticky;bottom:0;z-index:4;background:#fff;border:1px solid var(--line);border-radius:10px 10px 0 0;box-shadow:0 -4px 14px #0001;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.stickybar.off{opacity:.45;pointer-events:none}
+#toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);background:#14213d;color:#fff;padding:8px 16px;border-radius:20px;font-size:13px;box-shadow:0 4px 14px #0004;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20;max-width:80vw}
+#toast.on{opacity:1}#toast.er{background:var(--er)}
+.s1sum{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:2px 0}
+th.sortable{cursor:pointer;user-select:none}th.sortable:hover{background:#e6ecf4}
+.info{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#e3e9f2;color:#42526b;font-size:11px;font-weight:700;cursor:help;position:relative;margin-left:6px;vertical-align:middle;font-family:Segoe UI,sans-serif;text-transform:none;letter-spacing:0}
+.info:hover,.info:focus{background:var(--ac);color:#fff;outline:none}
+.info:hover::after,.info:focus::after{content:attr(data-tip);position:absolute;left:22px;top:-6px;z-index:40;background:#14213d;color:#fff;padding:8px 11px;border-radius:8px;font-weight:400;font-size:12.5px;line-height:1.45;width:max-content;max-width:360px;white-space:pre-wrap;box-shadow:0 6px 18px #0004;text-align:left}
+.ic{font-size:15px;line-height:1;padding:2px 7px;border-radius:8px;text-decoration:none;display:inline-block}
+.ic.ok{background:#d9f2e3;color:var(--ok)}.ic.am{background:#fff0cf;color:#b7791f}.ic.mu{color:var(--mu)}
+.pill.ok{background:#d9f2e3;color:#14532d}
+#newbar{background:#f0b429;color:#14213d;padding:7px 18px;font-size:13px;display:flex;gap:12px;align-items:center;position:sticky;top:49px;z-index:6}
+#newbar[hidden]{display:none}
+.pill{background:#e3e9f2;color:#2a3b57;border-radius:9px;padding:1px 9px;font-size:12px;font-weight:700}
+#sap{display:flex;gap:8px;align-items:center;font-size:12.5px}
+#sap .dot{width:10px;height:10px;border-radius:50%;background:#9aa5b1;display:inline-block}
+#sap .dot.ok{background:#3ddc84}#sap .dot.wait{background:#ffc247}#sap .dot.er{background:#ff6b5e}
+#dlgpwd{border:1px solid var(--line);border-radius:10px;padding:16px 18px;color:var(--tx)}#dlgpwd::backdrop{background:#0006}
+#sap .tx{color:#e6ecf5;max-width:520px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.split{display:grid;grid-template-columns:minmax(380px,420px) 1fr;gap:18px;align-items:start}
+.split h4.sub{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mu)}
+.grid1{display:grid;grid-template-columns:repeat(2,minmax(170px,1fr));gap:6px 10px}
+.grid1 label{font-size:12px}.grid1 input{padding:4px 8px}
+@media(max-width:1000px){.split{grid-template-columns:1fr}}
+.tramo{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fbfcfe}
+</style>
+</head>
+<body>
+<header>
+  <b>UAT · datos por caso</b>
+  <span class="mu" id="count" style="color:#cfd8e6"></span>
+  <span id="ver" style="color:#9fb0c8;font-size:11.5px" title="Versión de la herramienta que estás viendo"></span><button id="newver" hidden onclick="location.reload()" style="background:#f0b429;color:#14213d;border-color:#f0b429">Hay una versión nueva · Recargar</button>
+  <span id="sap"></span>
+  <dialog id="dlgplantas" onclick="if (event.target === this) this.close()" style="padding:0"><div style="min-width:480px;display:grid;gap:10px;padding:16px 18px">
+    <div style="display:flex;align-items:center"><b>Cargar plantas desde QS4</b><select id="plstream" onchange="abrirPlantas(this.value)" style="width:auto;margin-left:10px"><option>PP</option><option>QM</option><option>WM</option><option>LOG</option></select><button onclick="document.getElementById('dlgplantas').close()" title="Cerrar (Esc)" style="margin-left:auto;border:0;background:none;font-size:18px;line-height:1;padding:2px 8px">✕</button></div>
+    <div id="plmsg" class="mu" style="font-size:12.5px"></div>
+    <div id="pllista" style="max-height:50vh;overflow:auto"></div>
+    <label id="plautol" style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" id="plauto" checked style="width:auto;margin-top:3px"><span>Si SAP se cuelga, cerrarlo y seguir <span class="mu">(cierra también tu sesión de SAP y vuelve a entrar; hasta 3 reintentos)</span></span></label>
+    <div class="bar" style="margin:0"><button class="pri" id="plgo" onclick="lanzarPlantas()">Lanzar</button><button onclick="document.getElementById('dlgplantas').close()">Cerrar</button></div>
+  </div></dialog>
+  <dialog id="dlgprop" onclick="if (event.target === this) this.close()" style="padding:0"><div style="min-width:520px;display:grid;gap:10px;padding:16px 18px">
+    <div style="display:flex;align-items:center"><b>Propuesta en bloque</b><select id="prstream" onchange="abrirProp(this.value)" style="width:auto;margin-left:10px"></select><button onclick="document.getElementById('dlgprop').close()" title="Cerrar (Esc). Si hay una propuesta en marcha, sigue" style="margin-left:auto;border:0;background:none;font-size:18px;line-height:1;padding:2px 8px">✕</button></div>
+    <div id="prmsg" class="mu" style="font-size:12.5px"></div>
+    <div id="prlista" style="max-height:44vh;overflow:auto"></div>
+    <div id="prreloj"></div>
+    <div class="bar" style="margin:0"><button class="pri" id="prgo" onclick="lanzarProp()">Proponer</button><button onclick="document.getElementById('dlgprop').close()">Cerrar</button></div>
+  </div></dialog>
+  <dialog id="dlgpwd"><form method="dialog" onsubmit="return false" style="display:grid;gap:10px;min-width:320px">
+    <b>Contraseña de SAP (QS4)</b>
+    <div class="mu" style="font-size:12.5px">Se guarda cifrada en el Administrador de credenciales de Windows, en este equipo. No se escribe en ningún fichero y no se muestra después.</div>
+    <label>Usuario<input id="pw_user" autocomplete="off"></label>
+    <label>Contraseña<input id="pw_pwd" type="password" autocomplete="new-password"></label>
+    <div id="pw_msg"></div>
+    <div class="bar" style="margin:0"><button class="pri" onclick="guardarPwd()">Guardar</button><button onclick="document.getElementById('dlgpwd').close()">Cancelar</button></div>
+  </form></dialog>
+  <span class="nav"><button id="prbtn" onclick="abrirProp()" title="Rellenar una propuesta para los casos de un módulo (y de las plantas que elijas) ya cargados">Propuesta en bloque…</button><button onclick="abrirPlantas()" title="Leer de QS4 las plantas que faltan, una detrás de otra">Cargar plantas…</button><button onclick="genExcel()">Generar Excel</button></span>
+</header>
+<div id="newbar" hidden><b>Hay una versión nueva de la herramienta.</b><button onclick="location.reload()">Recargar ahora</button></div>
+<div id="banner" hidden></div>
+<div id="toast"></div>
+<div id="filterbar">
+  <input id="q" placeholder="Buscar caso, escenario, planta…" oninput="renderList()">
+  <select id="fs" onchange="renderList()"><option value="">Todos los tipos</option><option>PP</option><option>QM</option><option>PM</option><option>WM</option><option>LOG</option></select>
+  <div id="fewrap"><button type="button" id="febtn" onclick="toggleFe(event)">Todos los estados</button><div id="fepanel" hidden></div><input type="hidden" id="fe" value=""></div>
+  <select id="f2" onchange="onL2()"><option value="">Todos los bloques (L2)</option></select>
+  <select id="f3" onchange="renderList()"><option value="">Todos los subbloques (L3)</option></select>
+  <select id="ff" onchange="renderList()"><option value="">Todos los flujos</option></select>
+  <select id="fp" onchange="renderList()"><option value="">Todas las plantas</option></select>
+  <button onclick="clearFilters()" title="Quitar filtros">Limpiar</button>
+</div>
+<div class="layout">
+  <aside id="left">
+    <div id="list"></div>
+  </aside>
+  <main id="main"><div class="empty">Cargando…</div></main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

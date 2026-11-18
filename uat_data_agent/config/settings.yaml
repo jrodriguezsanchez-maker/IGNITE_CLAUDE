@@ -1,0 +1,23 @@
+# Ajustes del agente. Revisar antes del primer uso.
+sap:
+  system_id: "QS4"         # SID del sistema UAT (session.Info.SystemName). El script se detiene si no coincide.
+  connection_name: "QS4 - S4 Calidad"   # texto de la entrada en SAP Logon; solo se usa esa conexión
+  client: "200"             # Mandante UAT (session.Info.Client). El script se detiene si no coincide.
+  connection_index: 0       # Conexión de SAP GUI (0 = primera conexión abierta)
+  session_index: -1         # -1 = última sesión abierta. Abrir una sesión dedicada para el agente.
+  export_dir: "C:\\uat_agent\\data\\raw"   # Carpeta local (ruta absoluta Windows) donde SAP GUI deja los ficheros
+  export_format_radio: "wnd[1]/usr/subSUBSCREEN_STEPLOOP:SAPLSPO5:0150/sub:SAPLSPO5:0150/radSPOPLI-SELFLAG[1,0]"  # "Texto con tabuladores" [validar con el grabador]
+  max_wait_seconds: 900
+  # Únicas transacciones que el agente puede abrir. Todo lo demás se rechaza.
+  transaction_whitelist: ["SE16N"]
+paths:
+  uat_file: "data/project/iGnite_SCM_HUMAN_UAT_Planning_v20261008_SITsync.xlsx"   # fichero ORIGINAL (nunca se modifica)
+  raw_dir: "data/raw"
+  ecc_file: "C:/Users/j.rodriguez.sanchez/OneDrive - Accenture/Documents/SAP/SAP GUI/GRT.txt"   # listado de pedidos de ECC (flujos reales)
+  ledger: "data/ledger/reservas.csv"
+  gds_fail: "data/project/gds_fail.csv"        # opcional: columnas Plant, Material
+  out_dir: "out"
+
+# Materiales que no aplican: no se leen de QS4 ni se muestran. Rangos [desde, hasta] de número de material.
+exclusiones:
+  matnr: [[80000000, 89999999]]      # repuestos

@@ -1,0 +1,23 @@
+# Reglas de negocio que usa compose.py. Se mantienen aquí, no en el código.
+material_types:
+  ZFIN: "Producto terminado"
+  ZSEM: "Semielaborado"
+  ZFOR: "Formulado (WM y PP)"
+  ZRAW: "Materia prima"
+  ZPAC: "Packaging de producción (compra y traspasa)"
+  ZRPL: "Pallets de alquiler y de compra"
+  ZSPN: "Repuesto (visto en la Data)"
+  ZSPV: "Repuesto (visto en la Data)"
+flows:
+  ZTRA: {descripcion: "Traslado dentro de la misma sociedad (un ZTRA entre sociedades es un ERROR de datos: confirmado por el usuario)", emisora: true, misma_sociedad: true, stock_en: emisora, ampliado_en: [emisora, receptora]}
+  ZWIA: {descripcion: "Traslado entre plantas de la misma sociedad en distinto país (plant abroad)", emisora: true, misma_sociedad: true, distinto_pais: true, stock_en: emisora, ampliado_en: [emisora, receptora], proveedor: "P+emisora"}
+  ZINT: {descripcion: "Traslado entre sociedades", emisora: true, misma_sociedad: false, stock_en: emisora, ampliado_en: [emisora, receptora], proveedor: "P+emisora", registro_info: preferente}
+  ZINR: {descripcion: "Devolución entre sociedades", emisora: true, misma_sociedad: false, stock_en: emisora, ampliado_en: [emisora, receptora], proveedor: "P+emisora", registro_info: preferente}
+  ZPO:  {descripcion: "Pedido de compra", proveedor: registro_info, registro_info: obligatorio, esokz: "0", ampliado_en: [receptora]}
+  ZSER: {descripcion: "Pedido de compra de servicios", proveedor: registro_info, servicio: true, stock_en: ninguno}
+  ZSPO: {descripcion: "Subcontratación", proveedor: registro_info, registro_info: obligatorio, esokz: "3", ampliado_en: [receptora]}
+  ZSPA: {descripcion: "Compra de repuestos y de pallets de alquiler", proveedor: registro_info, registro_info: obligatorio, esokz: "0", tipos_permitidos: [ZRPL, ZSPN, ZSPV], ampliado_en: [receptora]}
+  VENTA: {descripcion: "Pedido de venta", clases: [ZAOR, ZGOS, ZADO, ZBRE, ZBRN, ZAWI, ZSSA, ZCCR], cliente: knvv, stock_en: receptora, ampliado_en: [receptora]}
+pendientes:
+modelo: dedicado        # cada caso recibe material/stock exclusivos
+bp_dedicado: false      # Suposición vigente: cliente/proveedor compartidos salvo que el escenario los modifique

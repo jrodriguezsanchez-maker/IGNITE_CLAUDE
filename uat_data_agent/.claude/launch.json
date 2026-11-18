@@ -1,0 +1,1 @@
+{"version":"0.0.1","configurations":[{"name":"uat-front","runtimeExecutable":"python","runtimeArgs":["front/server.py","--port","8766"],"port":8765}]}

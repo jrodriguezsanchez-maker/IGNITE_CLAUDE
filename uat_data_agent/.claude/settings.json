@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["Bash(python engine/*)", "Bash(python tests/*)"],
+    "ask":   ["Bash(python sap/*)"],
+    "deny":  ["Bash(*SAP_EDIT*)"]
+  }
+}

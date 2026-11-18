@@ -1,0 +1,7 @@
+MATNR	SPRAS	MAKTX
+1000001	S	Producto A
+1000002	S	Producto B
+1000003	S	Semielab C
+1000004	S	Materia prima D
+1000005	S	Envase E
+1000006	S	Producto F

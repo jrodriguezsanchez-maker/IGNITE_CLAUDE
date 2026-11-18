@@ -1,0 +1,83 @@
+# Recetas de extracción por SE16N (solo lectura).
+# Filtros: lista de valores | "@lista" | {low: X, high: Y} para rangos ("@desde" = fecha de corte).
+# output_fields: columnas a marcar como salida en SE16N (si no se implementa la selección, se exporta todo y el lector filtra).
+params:
+  desde: "20260101"          # PENDIENTE: fecha de copia del mandante UAT o ventana de documentos a considerar
+  hasta: "99991231"
+  idioma_textos: [E, S]
+lists:
+  plants: [L031, L032, L033, L035, L038, L046, L047, L048, L051, L052, L053, L056, L057, L063, L064, L066, L101, L102, L104, L105, L108, L113, L115, L116, L117, M006, M015, M017, M020, M021, M022, M023, M024, M025, M026, M027, M103, M105, M109, M116, M117, M120, S017]
+  plants_m: [M006, M015, M017, M020, M021, M022, M023, M024, M025, M026, M027, M103, M105, M109, M116, M117, M120]
+  mtart: [ZFIN, ZSEM, ZFOR, ZRAW, ZPAC, ZRPL, ZSPN, ZSPV]
+  bsart_mm: [ZTRA, ZWIA, ZINT, ZINR, ZPO, ZSPO, ZSPA, ZSER]
+  auart: [ZAOR, ZBRE, ZBRN, ZAWI, ZGOS, ZADO, ZSSA, ZCCR]   # todas son pedidos de venta (confirmado por el usuario)
+  vkorg: [1200, 1300, 1800, 2300, 2400, 2800, 2900, 3500, 4000, 4200, 4400, 5300, 5400, 5900, 6100, 6300, 6700, 8200, 8300, 8400, 8600, 9000, 9100]
+  ekorg: [BE01, CI01, DE01, DZ01, ES01, FI01, FR01, GH01, IT01, NG01, SE01, SN01]
+date_range: &rng {low: "@desde", high: "@hasta"}
+extractions:
+  # --- A. Organización: derivar y validar sociedad / org. compras / org. ventas / almacenes / WM / expedición
+  - {name: T001W, table: T001W, block: A, filters: {}, output_fields: [WERKS, NAME1, BWKEY, KUNNR, LIFNR, EKORG, VKORG, LAND1]}
+  - {name: T001K, table: T001K, block: A, filters: {}, output_fields: [BWKEY, BUKRS]}
+  - {name: T001,  table: T001,  block: A, filters: {}, output_fields: [BUKRS, BUTXT, LAND1]}
+  - {name: T024W, table: T024W, block: A, filters: {}, output_fields: [WERKS, EKORG]}
+  - {name: TVKO,  table: TVKO,  block: A, filters: {}, output_fields: [VKORG, BUKRS]}
+  - {name: TVKWZ, table: TVKWZ, block: A, filters: {}, output_fields: [VKORG, VTWEG, WERKS]}
+  - {name: T001L, table: T001L, block: A, filters: {WERKS: "@plants"}, output_fields: [WERKS, LGORT, LGOBE]}
+  - {name: T320,  table: T320,  block: A, filters: {WERKS: "@plants"}, output_fields: [WERKS, LGORT, LGNUM]}
+  - {name: TVSWZ, table: TVSWZ, block: A, filters: {WERKS: "@plants"}, output_fields: [VSTEL, WERKS]}
+  - {name: TTDS,  table: TTDS,  block: A, filters: {}, output_fields: [TPLST, BUKRS]}
+  - {name: T161,  table: T161,  block: A, filters: {BSART: "@bsart_mm"}, output_fields: [BSTYP, BSART]}
+  - {name: TVAK,  table: TVAK,  block: A, filters: {AUART: "@auart"}, output_fields: [AUART, VBTYP]}
+  # --- B. Material y stock (en S/4 MARD/MCHB/MSLB son vistas sobre MATDOC: más lentas)
+  - {name: MARA,  table: MARA,  block: B, filters: {MTART: "@mtart"}, output_fields: [MATNR, MTART, MATKL, MEINS, XCHPF, MSTAE, LVORM]}
+  - {name: MAKT,  table: MAKT,  block: B, filters: {SPRAS: "@idioma_textos"}, output_fields: [MATNR, SPRAS, MAKTX]}
+  - {name: MARC,  table: MARC,  block: B, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, MMSTA, LVORM, BESKZ, SOBSL, XCHPF, QMATV]}
+  - {name: MARD,  table: MARD,  block: B, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, LGORT, LABST, INSME, SPEME]}
+  - {name: MCHB,  table: MCHB,  block: B, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, LGORT, CHARG, CLABS, CINSM]}
+  - {name: MVKE,  table: MVKE,  block: B, filters: {VKORG: "@vkorg"}, output_fields: [MATNR, VKORG, VTWEG, VMSTA, DWERK]}
+  - {name: MLGN,  table: MLGN,  block: B, filters: {}, output_fields: [MATNR, LGNUM, LTKZE, LTKZA]}
+  - {name: MLGT,  table: MLGT,  block: B, filters: {}, output_fields: [MATNR, LGNUM, LGTYP, LGPLA]}
+  - {name: LQUA,  table: LQUA,  block: B, filters: {WERKS: "@plants"}, output_fields: [LGNUM, MATNR, WERKS, CHARG, LGTYP, LGPLA, VERME]}
+  # --- C. Compras, traslados y subcontratación (EKKO/EKPO/EKBE = evidencia de cadenas que ya funcionaron)
+  - {name: EINA,  table: EINA,  block: C, filters: {}, output_fields: [INFNR, MATNR, LIFNR, LOEKZ]}
+  - {name: EINE,  table: EINE,  block: C, filters: {EKORG: "@ekorg"}, output_fields: [INFNR, EKORG, ESOKZ, WERKS, LOEKZ]}
+  - {name: EORD,  table: EORD,  block: C, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, LIFNR, EKORG, VDATU, BDATU, FLIFN, RESWK]}
+  - {name: LFA1,  table: LFA1,  block: C, filters: {}, output_fields: [LIFNR, LAND1, NAME1, SPERR, SPERM, WERKS]}
+  - {name: LFM1,  table: LFM1,  block: C, filters: {EKORG: "@ekorg"}, output_fields: [LIFNR, EKORG, SPERM]}
+  - {name: LFB1,  table: LFB1,  block: C, filters: {}, output_fields: [LIFNR, BUKRS, SPERR]}
+  - {name: EKKO,  table: EKKO,  block: C, filters: {BSART: "@bsart_mm", AEDAT: *rng}, output_fields: [EBELN, BSART, BUKRS, EKORG, LIFNR, RESWK, AEDAT, LOEKZ]}
+  - {name: EKPO,  table: EKPO,  block: C, filters: {WERKS: "@plants", AEDAT: *rng}, output_fields: [EBELN, EBELP, MATNR, WERKS, LGORT, MENGE, PSTYP, ELIKZ, LOEKZ]}
+  - {name: EKBE,  table: EKBE,  block: C, filters: {WERKS: "@plants", BUDAT: *rng}, output_fields: [EBELN, EBELP, VGABE, BWART, MENGE, BUDAT, MATNR, WERKS]}
+  - {name: MSLB,  table: MSLB,  block: C, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, CHARG, LIFNR, LBLAB]}
+  # --- D. Ventas y entregas
+  - {name: KNA1,  table: KNA1,  block: D, filters: {}, output_fields: [KUNNR, LAND1, NAME1, AUFSD, LOEVM]}
+  - {name: KNVV,  table: KNVV,  block: D, filters: {VKORG: "@vkorg"}, output_fields: [KUNNR, VKORG, VTWEG, SPART, AUFSD, LIFSD, FAKSD, LOEVM]}
+  - {name: KNVP,  table: KNVP,  block: D, filters: {VKORG: "@vkorg", PARVW: [WE]}, output_fields: [KUNNR, VKORG, VTWEG, SPART, PARVW, KUNN2]}
+  - {name: VBAK,  table: VBAK,  block: D, filters: {AUART: "@auart", ERDAT: *rng}, output_fields: [VBELN, AUART, VKORG, VTWEG, SPART, KUNNR, ERDAT]}
+  - {name: VBAP,  table: VBAP,  block: D, filters: {WERKS: "@plants", ERDAT: *rng}, output_fields: [VBELN, POSNR, MATNR, WERKS, KWMENG, ABGRU]}
+  - {name: LIKP,  table: LIKP,  block: D, filters: {ERDAT: *rng}, output_fields: [VBELN, LFART, VSTEL, KUNNR, WADAT_IST, ERDAT]}
+  - {name: LIPS,  table: LIPS,  block: D, filters: {WERKS: "@plants", ERDAT: *rng}, output_fields: [VBELN, POSNR, MATNR, WERKS, LGORT, LFIMG, VGBEL, VGPOS]}
+  # --- E. Producción (materiales con estructura completa)
+  - {name: MAST,  table: MAST,  block: E, filters: {WERKS: "@plants_m"}, output_fields: [MATNR, WERKS, STLAN, STLNR, STLAL]}
+  - {name: STKO,  table: STKO,  block: E, filters: {}, output_fields: [STLTY, STLNR, STLAL, STLST, LOEKZ]}
+  - {name: STPO,  table: STPO,  block: E, filters: {}, output_fields: [STLTY, STLNR, POSNR, IDNRK, MENGE], extra_fields: [KZKUP, AUSCH, LKENZ]}
+  - {name: MKAL,  table: MKAL,  block: E, filters: {WERKS: "@plants_m"}, output_fields: [MATNR, WERKS, VERID, ADATU, BDATU, STLAL, PLNTY, PLNNR, MKSP], extra_fields: [MDV01]}
+  - {name: MAPL,  table: MAPL,  block: E, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, PLNTY, PLNNR, PLNAL, LOEKZ, LIFNR]}
+  - {name: PLKO,  table: PLKO,  block: E, filters: {}, output_fields: [PLNTY, PLNNR, PLNAL, STATU, VERWE, LOEKZ, KTEXT]}
+  - {name: AUFK,  table: AUFK,  block: E, filters: {}, output_fields: [AUFNR, AUART, AUTYP, WERKS, LOEKZ]}
+  - {name: AFKO,  table: AFKO,  block: E, filters: {GSTRP: *rng}, output_fields: [AUFNR, PLNBEZ, GSTRP, DISPO]}
+  - {name: AFPO,  table: AFPO,  block: E, filters: {DWERK: "@plants_m"}, output_fields: [AUFNR, MATNR, DWERK, PSMNG, WEMNG]}
+  # --- F. Calidad
+  - {name: QMAT,  table: QMAT,  block: F, filters: {WERKS: "@plants"}, output_fields: [MATNR, WERKS, ART, AKTIV]}
+  - {name: QALS,  table: QALS,  block: F, filters: {WERK: "@plants", ENSTEHDAT: *rng}, output_fields: [PRUEFLOS, ART, MATNR, WERK, CHARG, ENSTEHDAT]}
+  - {name: QMEL,  table: QMEL,  block: F, filters: {ERDAT: *rng}, output_fields: [QMNUM, QMART, MATNR, MAWERK, EQUNR, ERDAT]}
+  # --- G. Mantenimiento
+  - {name: EQUI,  table: EQUI,  block: G, filters: {}, output_fields: [EQUNR, EQTYP, EQART]}
+  - {name: EQUZ,  table: EQUZ,  block: G, filters: {IWERK: "@plants_m"}, output_fields: [EQUNR, IWERK, TPLNR, DATBI]}
+  - {name: IFLOT, table: IFLOT, block: G, filters: {IWERK: "@plants_m"}, output_fields: [TPLNR, IWERK, FLTYP]}
+  - {name: AFIH,  table: AFIH,  block: G, filters: {IWERK: "@plants_m"}, output_fields: [AUFNR, IWERK, EQUNR, ILART]}
+  # --- H. Transporte
+  - {name: VTTK,  table: VTTK,  block: H, filters: {ERDAT: *rng}, output_fields: [TKNUM, SHTYP, TPLST, TDLNR, ERDAT]}
+  - {name: VTTP,  table: VTTP,  block: H, filters: {}, output_fields: [TKNUM, TPNUM, VBELN]}
+  - {name: TVTK,  table: TVTK,  block: H, filters: {}, output_fields: [SHTYP]}
+  - {name: BUT100, table: BUT100, block: H, filters: {}, output_fields: [PARTNER, RLTYP]}
