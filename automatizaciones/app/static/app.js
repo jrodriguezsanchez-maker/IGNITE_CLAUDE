@@ -54,12 +54,15 @@ const isSit = () => sel && sel.meta.tipo === "sit_jira";
 // ---------- pestañas ----------
 function setTab(t) {
   $("vPrep").classList.toggle("hide", t !== "prep");
+  $("vCaso").classList.toggle("hide", t !== "caso");
   $("vRes").classList.toggle("hide", t !== "res");
   $("tabPrep").classList.toggle("on", t === "prep");
+  $("tabCaso").classList.toggle("on", t === "caso");
   $("tabRes").classList.toggle("on", t === "res");
   if (t === "res") loadRuns();
 }
 $("tabPrep").addEventListener("click", () => setTab("prep"));
+$("tabCaso").addEventListener("click", () => setTab("caso"));
 $("tabRes").addEventListener("click", () => setTab("res"));
 
 // ---------- flujos ----------
@@ -752,3 +755,184 @@ loadTree().then((t) => {
   if (first) return selectFlow(first[0], first[1]);
   note($("tree"), "No hay flujos.", true);
 }).catch((e) => note($("tree"), e.message, true));
+
+// ---------- pestaña «Caso concreto» ----------
+const CASO_CAMPOS = [
+  ["mov", "Tipo de movimiento *", "4", "301, 311, 343, 344…"], ["material", "Material *", "18", ""],
+  ["centro", "Planta origen *", "4", ""], ["almacen", "Almacén origen *", "4", ""],
+  ["centro_destino", "Planta destino", "4", "vacío = la de origen"], ["almacen_destino", "Almacén destino", "4", "vacío = el de origen"],
+  ["lote", "Lote origen *", "20", "o búscalo en el stock"], ["lote_destino", "Lote destino", "20", "vacío = el de origen"],
+  ["cantidad", "Cantidad *", "12", ""], ["tipo_stock", "Tipo de stock", "", ""],
+  ["vendor", "Vendor", "10", "541/542…"], ["pedido_compra", "Pedido de compra", "10", "101…"], ["orden_produccion", "Orden de producción", "12", "261…"],
+  ["motivo", "Motivo del movimiento", "", ""],
+];
+const casoIn = {};
+let casoPrep = null;
+
+function casoCampos() {
+  const c = {};
+  for (const [k] of CASO_CAMPOS) c[k] = (casoIn[k].value || "").trim();
+  return c;
+}
+function casoPoner(campos) {
+  for (const [k, v] of Object.entries(campos)) if (casoIn[k]) casoIn[k].value = v;
+  casoPrep = null;
+}
+const fmtN = (n) => Number(n).toLocaleString("es-ES", { maximumFractionDigits: 3 });
+
+function construirCaso() {
+  const v = $("vCaso");
+  const nl = h("input", { type: "text", id: "casoNl", class: "grow", style: "min-width:340px",
+    placeholder: "Ej.: traslado entre centros del material 544840 de M117 almacén 1000 a L105 almacén 1000, cantidad 1 kg" });
+  const grid = h("div", { style: "display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 12px;margin-top:10px" });
+  for (const [k, etiqueta, ml, ph] of CASO_CAMPOS) {
+    let inp;
+    if (k === "tipo_stock") {
+      inp = h("select", {}, ...[["", "(según el movimiento)"], ["libre", "Libre utilización"], ["calidad", "Control de calidad"], ["bloqueado", "Bloqueado"]].map(([val, txt]) => h("option", { value: val }, txt)));
+    } else if (k === "motivo") {
+      inp = h("select", {}, h("option", { value: "" }, "(sin motivo)"));
+    } else inp = h("input", { type: "text", maxlength: ml, placeholder: ph });
+    inp.addEventListener("change", () => { casoPrep = null; clear($("casoRes")); });
+    casoIn[k] = inp;
+    grid.append(h("label", { class: "muted", style: "display:block;font-size:12px" }, etiqueta, h("div", {}, inp)));
+  }
+  for (const k of ["mov", "material", "centro", "almacen", "centro_destino", "almacen_destino", "lote", "lote_destino", "cantidad", "vendor", "pedido_compra", "orden_produccion"]) casoIn[k].style.width = "100%";
+  for (const k of ["tipo_stock", "motivo"]) casoIn[k].style.width = "100%";
+  casoIn.mov.addEventListener("change", async () => { casoIn.mov.value = casoIn.mov.value.toUpperCase(); await casoRevisar(true); });
+
+  v.append(
+    h("div", { class: "card" },
+      h("h2", { style: "margin:0 0 6px" }, "Caso concreto"),
+      h("div", { class: "muted" }, "Describe el caso con tus palabras o rellena los campos. Mínimos: movimiento, material, planta, almacén, cantidad y lote (si no lo pones, lo busco en el stock)."),
+      h("div", { class: "row", style: "margin-top:8px" }, nl, h("button", { id: "casoBtnNl" }, "Rellenar campos")),
+      h("div", { id: "casoNlOut" }),
+      grid,
+      h("div", { class: "row", style: "margin-top:10px" },
+        h("button", { class: "sec", id: "casoBtnStock" }, "Buscar stock (MB52)"),
+        h("button", { class: "sec", id: "casoBtnRev" }, "Revisar datos"),
+        h("button", { class: "sec", id: "casoBtnChk" }, "Chequear en SAP (MIGO Check)"),
+        h("button", { id: "casoBtnPost", style: "background:#b42318" }, "Contabilizar en SAP…"),
+        h("button", { class: "sec", id: "casoBtnClr" }, "Limpiar")),
+      h("div", { id: "casoRes" })),
+    h("div", { class: "card hide", id: "casoStockCard" }, h("div", { id: "casoStock" })));
+
+  $("casoBtnNl").addEventListener("click", casoNl);
+  nl.addEventListener("keydown", (e) => { if (e.key === "Enter") casoNl(); });
+  $("casoBtnStock").addEventListener("click", casoStock);
+  $("casoBtnRev").addEventListener("click", () => casoRevisar(false));
+  $("casoBtnChk").addEventListener("click", casoChequear);
+  $("casoBtnPost").addEventListener("click", casoContabilizar);
+  $("casoBtnClr").addEventListener("click", () => { for (const [k] of CASO_CAMPOS) casoIn[k].value = ""; $("casoNl").value = ""; casoPrep = null; clear($("casoRes")); clear($("casoNlOut")); $("casoStockCard").classList.add("hide"); });
+}
+
+async function casoNl() {
+  const t = $("casoNl").value.trim();
+  if (!t) return;
+  try {
+    const r = await post("/api/caso/nl", { text: t });
+    casoPoner(r.campos);
+    const o = clear($("casoNlOut"));
+    o.append(h("div", { class: "msg" + (Object.keys(r.campos).length ? "" : " err") }, r.mensaje), r.entendido.length ? h("div", { class: "muted", style: "margin-top:4px" }, "Entendido: " + r.entendido.join(" · ")) : "");
+    await casoRevisar(true);
+  } catch (e) { note($("casoRes"), e.message, true); }
+}
+
+function casoMotivos(motivos, actual) {
+  const sel = casoIn.motivo, previo = actual ?? sel.value;
+  clear(sel).append(h("option", { value: "" }, motivos.length ? "(elige motivo)" : "(sin motivo)"));
+  for (const m of motivos) sel.append(h("option", { value: m.codigo }, `${m.codigo} · ${m.texto}`));
+  sel.value = previo;
+}
+
+function casoMostrar(p) {
+  const o = clear($("casoRes"));
+  casoMotivos(p.motivos || []);
+  if (p.datos && p.datos.lote && !casoIn.lote.value) casoIn.lote.value = p.datos.lote;
+  const bloques = [];
+  if (p.nombre) bloques.push(h("div", { style: "margin-top:8px" }, h("b", {}, `${p.mov} · ${p.nombre}`), p.permitido_contabilizar ? " " : "", p.permitido_contabilizar ? chip("OK", "se puede contabilizar") : (p.permitido_comprobar ? chip("PROPUESTO", "solo chequeo") : chip("NO_SOPORTADO", "no soportado aún"))));
+  if (p.problemas.length) bloques.push(h("div", { class: "msg err" }, ...p.problemas.map((x) => h("div", {}, "• " + x))));
+  if (p.derivado.length) bloques.push(h("div", { class: "msg" }, h("b", {}, "Valores derivados: "), ...p.derivado.map((x) => h("div", {}, "• " + x))));
+  if (p.avisos.length) bloques.push(h("div", { class: "muted", style: "margin-top:6px" }, ...p.avisos.map((x) => h("div", {}, "• " + x))));
+  if (p.ok) bloques.push(h("div", { class: "muted", style: "margin-top:6px" }, "Datos exactos → huella ", h("b", {}, p.huella)));
+  o.append(...bloques);
+}
+
+async function casoRevisar(silencioso) {
+  try {
+    if (!casoIn.mov.value.trim() && silencioso) return;
+    const p = await post("/api/caso/preparar", { campos: casoCampos() });
+    casoPrep = p;
+    casoMostrar(p);
+    if (p.lotes) casoTablaLotes({ lotes: p.lotes, evidencia: p.evidencia }, p);
+    return p;
+  } catch (e) { note($("casoRes"), e.message, true); }
+}
+
+async function casoStock() {
+  const c = casoCampos();
+  if (!c.material || !c.centro || !c.almacen) return note($("casoRes"), "Para buscar stock hacen falta material, planta y almacén de origen.", true);
+  note($("casoRes"), "Leyendo MB52 en SAP (solo lectura)…");
+  try {
+    const r = await post("/api/caso/stock", { campos: c });
+    casoTablaLotes(r, r.preparado);
+    casoMostrar(r.preparado);
+  } catch (e) { note($("casoRes"), e.message, true); }
+}
+
+function casoTablaLotes(r, p) {
+  $("casoStockCard").classList.remove("hide");
+  const tipo = (p && p.datos && p.datos.tipo_stock) || "libre";
+  const box = clear($("casoStock"));
+  const cant = parseFloat((casoIn.cantidad.value || "").replace(",", "."));
+  box.append(h("div", { class: "muted" }, r.evidencia));
+  if (!r.lotes.length) return box.append(h("div", { class: "msg err", style: "margin-top:6px" }, "MB52 no devolvió ninguna línea para ese material, planta y almacén. Revisa los datos o el mensaje de SAP de arriba: no es lo mismo que «sin stock»."));
+  const tb = h("table", {}, h("tr", {}, ...["", "Lote", "Libre", "Calidad", "Bloqueado", "UM", "Descripción"].map((x) => h("th", {}, x))));
+  const marca = { libre: "Libre", calidad: "Calidad", bloqueado: "Bloqueado" };
+  const lotes = [...r.lotes].sort((a, b) => b[tipo] - a[tipo]);
+  for (const l of lotes) {
+    const cubre = !isNaN(cant) && l[tipo] >= cant;
+    const fila = h("tr", { style: "cursor:pointer" + (casoIn.lote.value === l.lote && l.lote ? ";background:#e3eaff" : "") },
+      h("td", {}, h("button", { class: "sec", style: "padding:1px 8px" }, "Elegir")),
+      h("td", {}, l.lote || "(sin lote)"),
+      ...["libre", "calidad", "bloqueado"].map((k) => h("td", { style: "text-align:right" + (k === tipo ? ";font-weight:700" : "") + (k === tipo && !cubre ? ";color:#b54708" : "") }, fmtN(l[k]))),
+      h("td", {}, l.um), h("td", {}, l.descripcion));
+    fila.addEventListener("click", () => {
+      casoIn.lote.value = l.lote;
+      casoIn.cantidad.value = fmtN(l[tipo]).replace(/\./g, "");         // se propone el stock del lote; se puede cambiar
+      casoPrep = null;
+      casoTablaLotes(r, p);
+      note($("casoRes"), `Lote ${l.lote || "(sin lote)"} elegido: cantidad propuesta ${fmtN(l[tipo])} ${l.um} (${marca[tipo].toLowerCase()}). Cámbiala si quieres menos.`);
+    });
+    tb.append(fila);
+  }
+  box.append(h("div", { class: "muted", style: "margin:6px 0 4px" }, `${lotes.length} lote(s)/línea(s) en esa planta y almacén. En negrita, el stock «${marca[tipo].toLowerCase()}» del que sale este movimiento.`),
+    h("div", { class: "scroll", style: "max-height:320px" }, tb));
+}
+
+async function casoChequear() {
+  const p = await casoRevisar(true);
+  if (!p || !p.ok) return note($("casoRes"), "Faltan datos o hay errores: revísalos antes de chequear.", true);
+  note($("casoRes"), "Chequeando en MIGO (sin contabilizar)…");
+  try {
+    const r = await post("/api/caso/chequear", { campos: casoCampos() });
+    casoMostrar(r.prep);
+    $("casoRes").append(h("div", { class: "msg" + (r.tipo === "W" ? "" : ""), style: "margin-top:6px" }, h("b", {}, "Check de MIGO: "), r.check, " (no se ha contabilizado nada)"));
+  } catch (e) { casoMostrar(casoPrep || { problemas: [], derivado: [], avisos: [] }); $("casoRes").append(h("div", { class: "msg err", style: "margin-top:6px" }, h("b", {}, "MIGO rechaza el Check: "), e.message)); }
+}
+
+async function casoContabilizar() {
+  const p = await casoRevisar(true);
+  if (!p || !p.ok) return note($("casoRes"), "Faltan datos o hay errores: revísalos antes de contabilizar.", true);
+  if (!p.permitido_contabilizar) return note($("casoRes"), `El movimiento ${p.mov} aún no se puede contabilizar de verdad desde aquí (sí chequear: ${p.permitido_comprobar ? "sí" : "no"}).`, true);
+  if (!p.datos.lote && !confirm("No hay lote: ¿el material no lleva lotes? Si lo lleva, MIGO lo rechazará. ¿Seguir?")) return;
+  const d = p.datos;
+  const linea = `• mov ${d.mov} (${p.nombre}) · material ${d.material} · centro ${d.centro}${d.centro_destino !== d.centro ? " → " + d.centro_destino : ""} · almacén ${d.almacen}${["301", "311"].includes(d.mov) ? " → " + d.almacen_destino : ""} · lote ${d.lote || "sin lote"}${d.lote_destino && d.lote_destino !== d.lote ? " → " + d.lote_destino : ""} · cantidad ${d.cantidad} · motivo ${d.motivo || "—"}   [huella ${p.huella}]`;
+  const ok = await confirmarContabilizar(sistemasModo, [linea], [], []);
+  if (!ok) return note($("casoRes"), "Cancelado: no se ha contabilizado nada.");
+  try {
+    const r = await post("/api/caso/contabilizar", { campos: casoCampos(), huella: p.huella, confirmacion: "CONTABILIZAR" });
+    setTab("res"); openRun(r.id);
+  } catch (e) { note($("casoRes"), e.message, true); }
+}
+
+construirCaso();

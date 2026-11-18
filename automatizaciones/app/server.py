@@ -16,6 +16,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 import engine
 import sit_engine
+import caso
 import chequeo
 import sit_import
 import sto_engine
@@ -269,13 +270,14 @@ def execute_real(stream, flow, items, run_id):
                 dest = it.get("almacen_destino", "")
                 cdest = it.get("centro_destino", "") or it["centro"]
                 antes = sap_migo.stock_lote(ses, it["material"], it["centro"], it["almacen"], it["lote"])
-                antes_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, it["lote"]) if dest else None
+                lote_d = it.get("lote_destino", "") or it["lote"]
+                antes_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, lote_d) if dest else None
                 log("INFO", "%s stock antes: %s%s" % (it["jira_id"], antes, (" · destino " + str(antes_d)) if dest else ""))
                 res = sap_migo.traspaso(ses, mov=it["mov"], material=it["material"], centro=it["centro"], almacen=it["almacen"], lote=it["lote"],
                                         cantidad=it["cantidad"], um="", modo="contabilizar", clave=it["huella"], motivo=it["motivo"],
-                                        almacen_destino=dest, centro_destino=it.get("centro_destino", ""))
+                                        almacen_destino=dest, centro_destino=it.get("centro_destino", ""), lote_destino=it.get("lote_destino", ""))
                 despues = sap_migo.stock_lote(ses, it["material"], it["centro"], it["almacen"], it["lote"])
-                despues_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, it["lote"]) if dest else None
+                despues_d = sap_migo.stock_lote(ses, it["material"], cdest, dest, lote_d) if dest else None
                 log("INFO", "%s documento %s · stock después: %s%s" % (it["jira_id"], res["documento"] or "(no leído)", despues, (" · destino " + str(despues_d)) if dest else ""))
                 cant = float(str(it["cantidad"]).replace(",", "."))
                 esperado = (it["mov"] == "344" and abs((antes["libre"] - despues["libre"]) - cant) < 1e-6 and abs((despues["bloqueado"] - antes["bloqueado"]) - cant) < 1e-6) \
@@ -406,7 +408,64 @@ def interpret(text, stream, flow):
     return out
 
 
+def caso_item(prep, run_clave=""):
+    """Datos validados de un caso concreto -> elemento que entiende execute_real (los campos que no aplican al movimiento van vacíos: así la huella coincide)."""
+    import sap_migo
+    d = prep["datos"]
+    con_dest = d["mov"] in sap_migo.CON_DESTINO
+    return {"clave": run_clave or None, "jira_id": "CASO", "id_jira_unidad": "caso concreto",
+            "escenario": "Caso concreto · %s %s · %s → %s" % (d["mov"], d["material"], d["centro"], d["centro_destino"] if d["mov"] in sap_migo.CON_CENTRO_DESTINO else d["almacen_destino"] if con_dest else d["almacen"]),
+            "mov": d["mov"], "material": d["material"], "centro": d["centro"], "almacen": d["almacen"], "lote": d["lote"],
+            "lote_destino": d["lote_destino"] if d["lote_destino"] != d["lote"] else "", "cantidad": d["cantidad"], "motivo": d["motivo"],
+            "almacen_destino": d["almacen_destino"] if con_dest else "",
+            "centro_destino": d["centro_destino"] if d["mov"] in sap_migo.CON_CENTRO_DESTINO else "", "huella": prep["huella"]}
+
+
 class Handler(BaseHTTPRequestHandler):
+    def _caso(self, accion, data):
+        import sap_migo
+        d = flow_dir("SCM", "sit_escenarios_migo")
+        campos = data.get("campos") or {}
+        req, motivos = load_req(d), load_motivos(d)
+        if accion == "stock":
+            r = caso.leer_lotes(campos.get("material"), campos.get("centro"), campos.get("almacen"))
+            prep = caso.preparar(campos, req, motivos, r)
+            prep["motivos"] = motivos.get(prep["mov"], [])
+            return {**r, "preparado": prep}
+        prep = caso.preparar(campos, req, motivos)
+        prep["motivos"] = motivos.get(prep["mov"], [])
+        if accion == "preparar":
+            if prep["ok"] and not prep["datos"]["lote"]:
+                r = caso.leer_lotes(prep["datos"]["material"], prep["datos"]["centro"], prep["datos"]["almacen"])     # derivar el lote buscando stock
+                prep = caso.preparar(campos, req, motivos, r)
+                prep["motivos"] = motivos.get(prep["mov"], [])
+                prep["lotes"] = r["lotes"]
+                prep["evidencia"] = r["evidencia"]
+            return prep
+        if not prep["ok"]:
+            raise ValueError("Datos incompletos: " + " ".join(prep["problemas"]))
+        if not prep["datos"]["lote"]:
+            raise ValueError("Falta el lote: pulsa «Preparar» o «Buscar stock» y elígelo (o deja el material sin lote si no los lleva).")
+        if accion == "chequear":
+            dd = prep["datos"]
+            with caso.sesion_sap() as ses:
+                res = sap_migo.traspaso(ses, mov=dd["mov"], material=dd["material"], centro=dd["centro"], almacen=dd["almacen"], lote=dd["lote"],
+                                        cantidad=dd["cantidad"], um="", modo="comprobar", motivo=dd["motivo"],
+                                        almacen_destino=dd["almacen_destino"] if dd["mov"] in sap_migo.CON_DESTINO else "",
+                                        centro_destino=dd["centro_destino"] if dd["mov"] in sap_migo.CON_CENTRO_DESTINO else "",
+                                        lote_destino=dd["lote_destino"] if dd["lote_destino"] != dd["lote"] else "")
+            return {"prep": prep, "check": res["mensaje"], "tipo": res["tipo_mensaje"], "huella": prep["huella"]}
+        # contabilizar
+        if str(data.get("confirmacion", "")) != "CONTABILIZAR":
+            raise ValueError("Falta la confirmación explícita.")
+        if not prep["permitido_contabilizar"]:
+            raise ValueError("El movimiento %s aún no se puede contabilizar de verdad." % prep["mov"])
+        if str(data.get("huella", "")).upper() != prep["huella"]:
+            raise ValueError("Los datos han cambiado desde que los confirmaste (la huella no coincide). No se contabiliza nada.")
+        rid = time.strftime("%Y%m%d-%H%M%S-") + "%04x" % (time.time_ns() & 0xFFFF)
+        threading.Thread(target=execute_real, args=("SCM", "sit_escenarios_migo", [caso_item(prep)], rid), daemon=True).start()
+        return {"id": rid, "huella": prep["huella"]}
+
     server_version = "AutoFront/1.0"
 
     def log_message(self, fmt, *a):  # no registrar rutas/consultas en consola
@@ -689,6 +748,10 @@ class Handler(BaseHTTPRequestHandler):
                             props.setdefault(c, {})[str(m)] = int(q) if q == int(q) else q
             threading.Thread(target=execute_sit, args=(data["stream"], data["flow"], claves, rid, cantidad, props), daemon=True).start()
             return self._send(200, {"ok": True, "id": rid})
+        if u.path == "/api/caso/nl":
+            return self._send(200, caso.interpretar(str(data.get("text", ""))[:600]))
+        if u.path in ("/api/caso/stock", "/api/caso/preparar", "/api/caso/chequear", "/api/caso/contabilizar"):
+            return self._send(200, en_sap(self._caso, u.path.rsplit("/", 1)[1], data))
         if u.path == "/api/nl":
             return self._send(200, interpret(str(data.get("text", ""))[:500], data.get("stream", ""), data.get("flow", "")))
         self._send(404, {"error": "No encontrado"})

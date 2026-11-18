@@ -4,8 +4,20 @@
     {
       "name": "front-automatizaciones",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["automatizaciones/app/server.py"],
+      "runtimeArgs": [
+        "automatizaciones/app/server.py"
+      ],
       "port": 8765
+    },
+    {
+      "name": "uat-front",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "uat_data_agent/front/server.py",
+        "--port",
+        "8766"
+      ],
+      "port": 8766
     }
   ]
 }

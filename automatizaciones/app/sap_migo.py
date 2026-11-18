@@ -45,13 +45,15 @@ def cantidad_sap(c):
     return normalizar_cantidad(c).replace(".", ",")
 
 
-def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino="", centro_destino=""):
+def huella(mov, material, centro, almacen, lote, cantidad, motivo="", almacen_destino="", centro_destino="", lote_destino=""):
     """Código que identifica los datos exactos. Cambia si cambia cualquiera de ellos."""
     txt = "|".join(str(x).strip().upper() for x in (mov, material, centro, almacen, lote, normalizar_cantidad(cantidad), motivo))
     if almacen_destino:
         txt += "|" + str(almacen_destino).strip().upper()
     if centro_destino:
         txt += "|C:" + str(centro_destino).strip().upper()
+    if lote_destino and str(lote_destino).strip() != str(lote).strip():
+        txt += "|L:" + str(lote_destino).strip().upper()
     return hashlib.sha256(txt.encode("utf-8")).hexdigest()[:8].upper()
 
 
@@ -174,7 +176,7 @@ def _mensaje(ses):
     return str(sb.Text).strip(), str(sb.MessageType)
 
 
-def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo="", almacen_destino="", centro_destino=""):
+def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="comprobar", clave=None, motivo="", almacen_destino="", centro_destino="", lote_destino=""):
     """Prepara (y opcionalmente contabiliza) un traspaso en MIGO. Devuelve un dict con el resultado."""
     mov, cantidad = str(mov).strip().upper(), cantidad
     permitidos = MOVIMIENTOS_PERMITIDOS if modo == "contabilizar" else MOVIMIENTOS_COMPROBAR
@@ -192,7 +194,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
         raise MigoError("Cantidad fuera de rango (máximo %s)." % MAX_CANTIDAD)
     if modo not in ("comprobar", "contabilizar"):
         raise MigoError("Modo no válido.")
-    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo, almacen_destino, centro_destino)
+    esperada = huella(mov, material, centro, almacen, lote, cantidad, motivo, almacen_destino, centro_destino, lote_destino)
     if modo == "contabilizar" and (clave or "").upper() != esperada:
         raise MigoError("La huella no coincide con los datos: el usuario no ha confirmado estos datos exactos. No se contabiliza.")
     if str(ses.Info.Transaction) != "SESSION_MANAGER" or ses.Children.Count > 1:
@@ -278,7 +280,7 @@ def traspaso(ses, mov, material, centro, almacen, lote, cantidad, um="", modo="c
             if mov in CON_DESTINO:                            # traslado entre almacenes: MIGO exige también el lote de recepción (el mismo)
                 u = _buscar(usr(), "GuiCTextField", "GODYNPRO-UMCHA") or _buscar(usr(), "GuiTextField", "GODYNPRO-UMCHA")
                 if u is not None:
-                    u.text = str(lote)
+                    u.text = str(lote_destino or lote)                  # lote de recepción (el mismo salvo que se indique otro)
         campo("GODYNPRO-ERFMG").text = cantidad_sap(cantidad)                               # cantidad (formato de números de SAP)
         intro("al introducir cantidad y lote")
         if motivo:                                                                          # motivo del movimiento: pestaña «Where»
